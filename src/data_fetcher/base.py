@@ -11,8 +11,9 @@ Provides:
 from __future__ import annotations
 
 import hashlib
+import json
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -96,6 +97,12 @@ class BaseFetcher(ABC):
             logger.info(
                 f"[{self.name}] Saved {len(df)} rows to {cache_path}"
             )
+            self._record_manifest(
+                cache_path=cache_path,
+                start_date=start_date,
+                end_date=end_date,
+                rows=len(df),
+            )
 
         return df if df is not None else pd.DataFrame()
 
@@ -159,3 +166,40 @@ class BaseFetcher(ABC):
         for p in self._cache_dir.glob(f"{self.name}_*.parquet"):
             p.unlink()
             logger.info(f"[{self.name}] Deleted cache file: {p}")
+
+    # ── Manifest / lineage ───────────────────────────────────────────────────
+
+    def _record_manifest(
+        self,
+        cache_path: Path,
+        start_date: str,
+        end_date: str,
+        rows: int,
+    ) -> None:
+        """Append a JSONL record describing this fetch to data/_meta/.
+
+        Each line records the fetcher name, date range, output row count
+        and a short MD5 of the cache file's bytes, providing a simple
+        audit trail.  Failures are swallowed – manifest logging must
+        never break a fetch.
+        """
+        try:
+            meta_dir = self._settings.data_dir / "_meta"
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            digest = ""
+            if cache_path.exists():
+                with cache_path.open("rb") as fh:
+                    digest = hashlib.md5(fh.read()).hexdigest()
+            record = {
+                "fetcher": self.name,
+                "start_date": start_date,
+                "end_date": end_date,
+                "rows": int(rows),
+                "cache_path": str(cache_path),
+                "md5": digest,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+            with (meta_dir / "manifest.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[{self.name}] manifest record skipped: {exc}")

@@ -46,20 +46,100 @@ class BondsFetcher(BaseFetcher):
         self,
         series_id: str = "DGS10",
         country: str = "US",
+        source: str = "auto",
     ) -> None:
         super().__init__(name=f"bond_{series_id}")
         self.series_id = series_id
         self.country = country
+        self.source = source
 
     # ── Abstract implementation ───────────────────────────────────────────────
 
     def _fetch_remote(
         self, start_date: str, end_date: str
     ) -> pd.DataFrame:
-        """Fetch yield series from FRED."""
+        """Fetch yield series.
+
+        Backend selection:
+
+        * ``source="auto"`` (default) – try the no-key FRED CSV endpoint
+          first, then the US Treasury Daily Par Yield CSV, then the
+          authenticated fredapi (if a key is configured).
+        * ``source="fred_csv"`` – only the public CSV endpoint.
+        * ``source="treasury_gov"`` – only the US Treasury CSV.
+        * ``source="fredapi"`` – legacy authenticated path.
+        """
+        backends = self._backend_order()
+        last_exc: Optional[Exception] = None
+        for backend in backends:
+            try:
+                df = backend(start_date, end_date)
+                if df is not None and not df.empty:
+                    return df
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                logger.warning(
+                    f"[{self.name}] backend {backend.__name__} failed: {exc}"
+                )
+        if last_exc is not None:
+            raise last_exc
+        return pd.DataFrame()
+
+    def _backend_order(self):
+        """Return the ordered list of backend callables to try."""
+        if self.source == "fred_csv":
+            return [self._fetch_fred_csv]
+        if self.source == "treasury_gov":
+            return [self._fetch_treasury_gov]
+        if self.source == "fredapi":
+            return [self._fetch_fred_api]
+        # auto
+        return [
+            self._fetch_fred_csv,
+            self._fetch_treasury_gov,
+            self._fetch_fred_api,
+        ]
+
+    # ── Backend implementations ───────────────────────────────────────────────
+
+    def _fetch_fred_csv(
+        self, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch via FRED public CSV (no API key)."""
+        from src.data_fetcher.backends import fred_csv
+
+        df = fred_csv.fetch_series(
+            self.series_id, start_date=start_date, end_date=end_date
+        )
+        # Map "value" → "yield_pct" for backwards compatibility.
+        out = df.rename(columns={"value": "yield_pct"})
+        out["country"] = self.country
+        return out
+
+    def _fetch_treasury_gov(
+        self, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch via US Treasury Daily Par Yield Curve CSV."""
+        if self.country != "US":
+            raise RuntimeError(
+                "treasury_gov backend only supports US yields"
+            )
+        from src.data_fetcher.backends import treasury_gov
+
+        df = treasury_gov.fetch_series(
+            self.series_id, start_date=start_date, end_date=end_date
+        )
+        out = df.rename(columns={"value": "yield_pct"})
+        out["country"] = self.country
+        return out
+
+    def _fetch_fred_api(
+        self, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch yield series from FRED using the authenticated API."""
         settings = get_settings()
         if not settings.fred_api_key:
-            logger.warning("FRED_API_KEY is not set – skipping bond fetch.")
+            logger.warning("FRED_API_KEY is not set – skipping fredapi fetch.")
             return pd.DataFrame()
         try:
             from fredapi import Fred  # type: ignore[import]
@@ -75,10 +155,11 @@ class BondsFetcher(BaseFetcher):
             df.index.name = "date"
             df["series_id"] = self.series_id
             df["country"] = self.country
+            df["source"] = "fredapi"
             return df
         except Exception as exc:  # noqa: BLE001
             logger.error(
-                f"[{self.name}] FRED bond fetch failed "
+                f"[{self.name}] fredapi bond fetch failed "
                 f"for {self.series_id}: {exc}"
             )
             raise
