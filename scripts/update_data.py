@@ -6,6 +6,7 @@ local data up-to-date for offline analysis.
 
 Usage:
     python scripts/update_data.py [--start-date YYYY-MM-DD] [--sources src1,src2]
+    python scripts/update_data.py [--category macro] [--region US] [--since YYYY-MM-DD]
 """
 
 from __future__ import annotations
@@ -147,7 +148,7 @@ def update_bonds(start_date: str, end_date: str, force_refresh: bool) -> None:
 
 
 def update_macro(start_date: str, end_date: str, force_refresh: bool) -> None:
-    """Update macro-economic indicators (requires FRED API key)."""
+    """Update macro-economic indicators via key-less FRED CSV by default."""
     from src.data_fetcher.macro_economic import MacroEconomicFetcher
 
     for series_id in ["CPIAUCSL", "NAPM", "FEDFUNDS", "GDPC1"]:

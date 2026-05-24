@@ -1,6 +1,6 @@
 # 数据源清单 (Data Source Catalog)
 
-本项目所有数据源均**不强依赖任何 API Key**。下表按 8 大类目整理免费数据源、接入方式与历史长度。
+本项目所有已注册数据源均**不强依赖任何 API Key**。下表按 8 大类目整理免费数据源、接入方式与历史长度；除明确标注“计划”外，均以 `config/data_sources.py` 中的注册项为准。
 
 > **总原则**：FRED 公共 CSV 端点 (`https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>`) 完全免费、不需要 Key，可替代 `fredapi` 几乎所有调用。`MacroEconomicFetcher` 与 `BondsFetcher` 默认走 `fred_csv` 后端，并将 `fredapi` 作为可选 fallback。
 
@@ -36,7 +36,7 @@
 | 指标 | 后端 | 备注 |
 |---|---|---|
 | 中国 CPI YoY | `akshare` (`ak.macro_china_cpi_yearly`) | 已封装 |
-| 中国 PPI / GDP / M2 / 社融 / 利率 | `akshare` | 扩展即可 |
+| 中国 PPI / GDP / M2 / 社融 / 利率 | `akshare` | 计划扩展，尚未注册 |
 | 备份 | 国家统计局 / 东方财富 / 同花顺（均经由 akshare） | — |
 
 ## 4. 全球宏观 (Macro / Global, EU, JP, …)
@@ -44,7 +44,7 @@
 | 指标 | 后端 | URL | Key |
 |---|---|---|---|
 | 欧元区 HICP | `ecb_sdw` (`ICP/M.U2.N.000000.4.ANR`) | https://sdw-wsrest.ecb.europa.eu/ | 无 |
-| 欧元区国债收益率 | `ecb_sdw` (`YC/B.U2.EUR…`) | 同上 | 无 |
+| 欧元区国债收益率 | `ecb_sdw` (`YC/B.U2.EUR…`)（计划） | 同上 | 无 |
 | 全球 GDP (US$) | `worldbank` (`WLD:NY.GDP.MKTP.CD`) | https://api.worldbank.org/v2/ | 无 |
 | OECD 综合领先指标 | `oecd_sdmx`（计划） | https://stats.oecd.org/SDMX-JSON/ | 无 |
 | IMF WEO / IFS | IMF SDMX（计划） | https://dataservices.imf.org/ | 无 |
@@ -53,18 +53,23 @@
 
 | 指标 | 主后端 | Fallback |
 |---|---|---|
-| S&P 500 / NASDAQ-100 | `yfinance` | `stooq` |
-| 沪深 300 / 中证 500 | `yfinance`, `akshare` | — |
-| 恒生 / 国企 | `yfinance` | `stooq` |
-| 日经 225 / 欧股 | `yfinance` | `stooq` |
+| S&P 500 | `yfinance` | `stooq` |
+| NASDAQ-100 | `yfinance` | 计划 |
+| 沪深 300 | `yfinance` | `akshare` |
+| 中证 500 | `yfinance`, `akshare` | 计划 |
+| 恒生 | `yfinance` | `stooq` |
+| 国企指数 | `yfinance` | 计划 |
+| 日经 225 | `yfinance` | `stooq` |
+| 欧股 | `yfinance` | 计划 |
 
 ## 6. 商品 (Commodity)
 
 | 指标 | 主后端 | Fallback |
 |---|---|---|
-| 黄金 / 白银 | `yfinance` | `stooq`, LBMA 公开 CSV |
-| WTI / Brent 原油 | `yfinance` | EIA Open Data CSV |
-| 综合商品指数 | `yfinance` | World Bank Pink Sheet |
+| 黄金 / 白银 | `yfinance` | `stooq` |
+| WTI 原油 | `yfinance` | `stooq` |
+| Brent 原油 | `yfinance` | 计划，可考虑 EIA Open Data CSV |
+| 综合商品指数 | `yfinance` | 计划，可考虑 World Bank Pink Sheet |
 
 ## 7. 汇率 (FX)
 
@@ -72,13 +77,14 @@
 |---|---|---|
 | DXY | `yfinance` | `stooq` |
 | EUR/USD | `yfinance` | `ecb_sdw` (`EXR/D.USD.EUR.SP00.A`), `stooq` |
-| USD/CNY | `yfinance` | `akshare`（外管局） |
+| USD/CNY | `yfinance` | 计划，可考虑 `akshare`（外管局） |
 
 ## 8. 情绪 / 风险 (Sentiment / Risk)
 
 | 指标 | 主后端 | 备注 |
 |---|---|---|
-| VIX / MOVE / SKEW | `yfinance` | — |
+| VIX | `yfinance` | 可选 `stooq` fallback |
+| MOVE / SKEW | `yfinance` | 计划 |
 | NFCI 金融条件 | `fred_csv` | 见 §1 |
 | AAII 散户情绪 | 计划：AAII 公开 CSV | 每周 |
 | GDELT 事件/情绪 | 计划：GDELT CSV | 全球 |
