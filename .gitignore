@@ -1,0 +1,62 @@
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# ── Virtual environments ─────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+ENV/
+
+# ── Jupyter ──────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── pytest / coverage ────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── mypy / type checkers ─────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+
+# ── ruff / linters ───────────────────────────────────────────
+.ruff_cache/
+
+# ── IDEs ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Data directory: ignore actual data files, keep structure ─
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Streamlit cache ──────────────────────────────────────────
+.streamlit/
+
+# ── Poetry lock (commit if you want reproducible installs) ───
+# poetry.lock
