@@ -15,6 +15,8 @@ Global Economy Lab 帮助研究者与学习者：
 - 📈 **资产联动**：计算滚动相关系数矩阵，理解股、债、商品、汇率的联动关系
 - 🏛️ **事件复盘**：以历史重大事件为锚点，分析各资产在冲击前后的表现
 
+当前推进路径见 [`docs/phase1_execution_plan.md`](docs/phase1_execution_plan.md)，其中细化了第一阶段的数据收集、回测目标、文档对齐方式和 TODO 清单。
+
 ---
 
 ## 项目结构
@@ -170,6 +172,8 @@ make dashboard
 ## 数据来源说明
 
 `config/data_sources.py` 是数据源注册表与事实源；下表只汇总当前已注册数据源和默认后端。默认运行不需要 API Key，少数后端（如 `fredapi`）仅作为可选 fallback 或覆盖率增强。
+
+第一阶段优先围绕美国宏观、主要跨资产价格与风险指标形成研究闭环；详细执行方案和验收标准见 [`docs/phase1_execution_plan.md`](docs/phase1_execution_plan.md)。
 
 | 数据类型 | 来源库/API |
 |----------|-----------|
