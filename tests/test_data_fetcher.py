@@ -100,7 +100,9 @@ class TestBaseFetcher:
         cache_file = tmp_cache / "test_cache.parquet"
         sample_ohlcv.to_parquet(cache_file)
         loaded = pd.read_parquet(cache_file)
-        pd.testing.assert_frame_equal(sample_ohlcv, loaded)
+        # Parquet does not preserve DatetimeIndex.freq metadata, so compare
+        # without requiring frequency equality.
+        pd.testing.assert_frame_equal(sample_ohlcv, loaded, check_freq=False)
 
 
 # ── EquitiesFetcher tests ─────────────────────────────────────────────────────
@@ -159,7 +161,13 @@ class TestMacroEconomicFetcher:
     """Tests for the macro-economic data fetcher."""
 
     def test_returns_empty_df_without_fred_key(self, tmp_path: Path) -> None:
-        """Without a FRED API key, FRED fetches should return empty DataFrame."""
+        """Without a FRED API key, the key-gated ``fredapi`` backend returns
+        an empty DataFrame instead of raising.
+
+        Note: the default ``source="fred"`` now routes through the public,
+        key-less ``fred_csv`` endpoint (see PR #2), so this test explicitly
+        targets ``source="fredapi"`` to exercise the key-gated path.
+        """
         from src.data_fetcher.macro_economic import MacroEconomicFetcher
         from config.settings import get_settings
 
@@ -174,7 +182,7 @@ class TestMacroEconomicFetcher:
                 new_callable=lambda: property(lambda self: tmp_path / "processed"),
             ),
         ):
-            f = MacroEconomicFetcher(series_id="GDPC1")
+            f = MacroEconomicFetcher(series_id="GDPC1", source="fredapi")
             result = f._fetch_remote("2020-01-01", "2021-01-01")
         assert isinstance(result, pd.DataFrame)
         assert result.empty
