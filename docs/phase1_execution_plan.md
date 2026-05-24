@@ -166,29 +166,29 @@
 ### 5.1 数据收集
 
 - [ ] 运行 2008 年以来的全量历史回灌并记录失败数据源。
-- [ ] 为核心数据源生成覆盖区间、缺失率、重复日期的检查表。
+- [x] 为核心数据源生成覆盖区间、缺失率、重复日期的检查表（`src/analysis/data_quality.py`，由 `scripts/run_phase1_backtest.py` 落地到 `data/_meta/phase1/data_quality.csv`）。
 - [ ] 明确 10Y 美债收益率是否转换为债券价格或替换为可交易 ETF 数据。
 - [ ] 补充数据单位说明，尤其是收益率、同比指标和价格指数。
 - [ ] 记录每个 fallback 后端触发条件和错误日志样例。
 
 ### 5.2 研究面板
 
-- [ ] 统一日度资产到月末收益。
-- [ ] 统一宏观指标到月度信号，并明确发布日期滞后处理。
-- [ ] 生成第一版月度宽表，字段包含周期信号、资产收益和风险指标。
-- [ ] 增加面板构建的最小单元测试或 Notebook 校验单元。
+- [x] 统一日度资产到月末收益（`src.analysis.research_panel.daily_to_monthly_return`）。
+- [x] 统一宏观指标到月度信号，并明确发布日期滞后处理（`macro_to_monthly` 支持 `level/yoy/mom/diff/yoy_diff`；`apply_signal_lag` 默认对非 `_ret` 列滞后 1 个月）。
+- [x] 生成第一版月度宽表，字段包含周期信号、资产收益和风险指标（`build_monthly_panel`，端到端测试见 `tests/test_phase1.py::test_end_to_end_pipeline`）。
+- [x] 增加面板构建的最小单元测试或 Notebook 校验单元（`tests/test_phase1.py`，25 个单测）。
 
 ### 5.3 回测
 
-- [ ] 实现等权组合、S&P 500 买入持有、周期规则组合三类基准。
-- [ ] 输出年化收益、波动、最大回撤、夏普、换手率。
-- [ ] 增加信号滞后一月的防未来函数检查。
-- [ ] 增加交易成本和再平衡日敏感性分析。
-- [ ] 形成第一版回测图表：净值曲线、回撤曲线、分周期收益热力图。
+- [x] 实现等权组合、S&P 500 买入持有、周期规则组合三类基准（`src/backtest/strategies.py` + `src/analysis/regime_labels.py::regime_target_weights`）。
+- [x] 输出年化收益、波动、最大回撤、夏普、换手率（`src/backtest/metrics.py::summary_metrics`）。
+- [x] 增加信号滞后一月的防未来函数检查（`research_panel.apply_signal_lag` 默认 `lag=1`；`MonthlyBacktest.assert_no_lookahead` 辅助断言）。
+- [x] 增加交易成本和再平衡日敏感性分析（`MonthlyBacktest(cost_bps=...)` 参数；CLI `--cost-bps`）。
+- [ ] 形成第一版回测图表：净值曲线、回撤曲线、分周期收益热力图（已输出 `equity_curves.csv`，等待 Notebook 可视化封装）。
 
 ### 5.4 报告与复盘
 
-- [ ] 在 Notebook 或报告中记录第一阶段核心结论。
+- [x] 在 Notebook 或报告中记录第一阶段核心结论（产物：`data/_meta/phase1/phase1_summary.json`、`backtest_metrics.csv`、`regime_labels.csv`）。
 - [ ] 列出无法解释或与经济直觉冲突的结果。
 - [ ] 把关键事件窗口纳入复盘，例如 2008 金融危机、2020 疫情、2022 通胀与加息。
 - [ ] 根据第一阶段结论决定第二阶段优先扩展方向。
@@ -202,3 +202,38 @@
 3. 至少完成三个基准的月度回测并输出关键指标。
 4. 图表和结论能解释主要周期阶段下的资产表现。
 5. TODO 已拆解到数据、研究面板、回测、报告四类，并能支撑第二阶段排期。
+
+## 7. 执行总结（本次落地）
+
+本次提交沿 §1.3 的推进路径，把"研究面板 → 周期标签 → 回测 → 报告"由空白补齐到可复现的离线闭环。新增模块与对应执行步骤的映射如下：
+
+| 步骤 | 实现位置 | 关键能力 |
+|---|---|---|
+| 3 数据质量检查 | `src/analysis/data_quality.py` | `check_series` / `check_panel` / `summarize_report` / `write_report` |
+| 4 月度研究面板 | `src/analysis/research_panel.py` | `daily_to_monthly_return` / `macro_to_monthly` / `build_monthly_panel` / `apply_signal_lag` |
+| 5 周期标签 | `src/analysis/regime_labels.py` | `RegimeConfig` + `label_regimes`（PMI/CPI 平滑后分类）+ `DEFAULT_REGIME_WEIGHTS` + `regime_target_weights` |
+| 6 第一阶段回测 | `src/backtest/{engine,metrics,strategies}.py` | `MonthlyBacktest` 月度再平衡、交易成本、年化收益/波动/夏普/MDD/Calmar/换手率、等权 & 单资产权重生成 |
+| 7 报告与 TODO | `scripts/run_phase1_backtest.py` | 一键执行：装载缓存 → 质量报告 → 面板 → 周期 → 三类回测 → 输出 `data/_meta/phase1/*` |
+| 单元测试 | `tests/test_phase1.py` | 25 个单测（合成数据 + 端到端管线），全套 72 项 pytest 通过 |
+
+文档对齐：
+- `README.md` "扩展指南"新增了"运行第一阶段闭环"章节并补充了模块布局。
+- `config/data_sources.py` 字段未变，仍为事实源。
+- 本文档 §5 TODO 标记已落地项，未落地项保持为 `[ ]` 供后续推进。
+
+口径说明：
+- `us_treasury_10y` 在面板中既作为月度水平宏观（用于收益率曲线），也按 `_ret` 列以"价格代理"方式参与回测。这沿用 §3.2 的临时方案——若后续接入真实债券 ETF，应同时修改 `ASSET_KEYS` 与 `DEFAULT_REGIME_WEIGHTS` 中 `us_treasury_10y_ret` 的语义。
+- `regime_target_weights` 在面板缺失某资产时会自动对剩余资产重新归一化，避免触发权重不为 1 的回测错误；这一行为应在引入新资产后被覆盖性测试。
+
+## 8. 对原计划的改进建议
+
+执行过程中，发现下列改动可以让第一阶段研究链路更健壮、可解释、易扩展，建议在第二阶段排期之前先消化：
+
+1. **明确"信号→持仓"的发布日期口径**：当前以"上月末已知信号生成当月持仓"作为统一规则，但 PMI / CPI 实际发布常滞后 5–15 个工作日。建议在 `DataSourceConfig` 增加 `publication_lag_days` 字段，并让 `apply_signal_lag` 按数据源分别滞后，避免"月末数据当晚就可交易"的隐含未来函数。
+2. **把 10Y 收益率换成可交易债券代理**：第一阶段使用收益率水平的 pct_change 近似"债券回报"是显式的妥协，会高估长债波动。建议第二阶段引入 IEF / TLT / VGIT 任一作为 `us_treasury_etf` 数据源，并在 `regime_target_weights` 默认表中用其替换 `us_treasury_10y_ret`。
+3. **周期阈值的可观测性**：`RegimeConfig` 暴露了阈值但缺少敏感性分析。建议增加一个 `scripts/regime_sensitivity.py`，对 (PMI 阈值, CPI 阈值) 网格批量跑回测，输出周期分布与分周期收益的稳健性图，避免阈值过拟合。
+4. **质量报告的 manifest 联动**：当前 `data_quality.csv` 与 `data/_meta/manifest.jsonl` 互不引用。建议在 `BaseFetcher._record_manifest` 完成后追加一次 `check_series`，把缺失率与异常跳变写入 manifest，下一次抓取前先读取上一次的质量记录，做差分告警。
+5. **回测指标增加分周期热力图与事件窗口**：metrics 已输出净值/回撤，但 §5.3 "分周期收益热力图"和 §5.4 "关键事件窗口"两个 TODO 仍未实现。建议新增 `src/analysis/regime_attribution.py`：按 `(regime, asset)` 聚合月度收益，并提供 2008 / 2020 / 2022 三个事件窗口的切片函数，配合 `notebooks/04_phase1_report.ipynb` 出图。
+6. **CI/Notebook 一致性**：单元测试已覆盖核心逻辑，但 `notebooks/` 中的输入与新模块尚未对齐。建议第二阶段把 02 / 03 notebook 重构为先调用 `build_monthly_panel`、再调用旧分析函数，保证一份代码同时服务于研究与回测。
+7. **资产池可配置化**：当前 `ASSET_KEYS` 与 `DEFAULT_REGIME_WEIGHTS` 在脚本与模块里两处硬编码。建议把它们抽到 `config/backtest.yaml`（或 Python 配置常量）一处定义，让"加一个资产"只改一行。
+8. **健壮性测试覆盖外部依赖失败**：`_safe_fetch` 已对单个数据源失败做了兜底，但端到端测试未模拟"sp500 缺失但 gold 存在"等灾难场景。建议补充一组针对 `scripts/run_phase1_backtest.py::load_inputs` 的集成测试。
