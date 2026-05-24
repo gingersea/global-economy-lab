@@ -32,18 +32,22 @@ global-economy-lab/
 │   └── data_sources.py      # 所有数据源定义
 ├── data/
 │   ├── raw/                 # 原始数据缓存
-│   └── processed/           # 处理后数据
+│   ├── processed/           # 标准 Parquet 缓存
+│   ├── snapshots/           # 不可变历史快照（可选）
+│   └── _meta/               # 抓取 manifest / 元数据
 ├── notebooks/
 │   ├── 01_hello_world.ipynb
 │   ├── 02_economic_dashboard.ipynb
 │   └── 03_event_replay.ipynb
 ├── src/
-│   ├── data_fetcher/        # 数据获取层
+│   ├── data_fetcher/        # 数据获取层（含 backends/ 免费后端）
 │   ├── analysis/            # 分析层
 │   └── visualization/       # 可视化层
 ├── tests/
+│   ├── test_backends.py
 │   └── test_data_fetcher.py
 └── scripts/
+    ├── bootstrap_history.py
     ├── update_data.py
     └── run_dashboard.py
 ```
@@ -107,7 +111,13 @@ python scripts/bootstrap_history.py --start-date 2008-01-01
 python scripts/update_data.py
 # 按类目 / 区域 / 起始日期：
 python scripts/update_data.py --category macro --region US --since 2010-01-01
+# 等价写法：
+python scripts/update_data.py --category macro --region US --start-date 2010-01-01
+# 指定 legacy 分组、结束日期并跳过缓存：
+python scripts/update_data.py --sources macro,bonds --end-date 2024-12-31 --force-refresh
 ```
+
+`scripts/update_data.py` 支持 `--start-date`（或别名 `--since`）、`--end-date`、`--sources`、`--category`、`--region`、`--force-refresh`。其中 `--category` / `--region` 按 `config/data_sources.py` 注册表筛选；`--sources` 使用脚本内置的 legacy 分组（`macro`、`equities`、`bonds`、`commodities`、`fx`、`sentiment`）。
 
 ### 2. 打开探索性分析 Notebook
 
@@ -147,7 +157,7 @@ make dashboard
 1. 在 `config/data_sources.py` 中注册新数据源配置（名称、描述、频率）。
 2. 在 `src/data_fetcher/` 中新建或修改对应 fetcher 文件，继承 `BaseFetcher`。
 3. 实现 `fetch(start_date, end_date)` 方法，返回 `pd.DataFrame`。
-4. 在 `scripts/update_data.py` 中将新 fetcher 加入更新列表。
+4. 默认通过 `scripts/update_data.py --category ... --region ...` 走注册表更新；只有需要加入 legacy `--sources` 分组时，才修改脚本内置分组。
 
 ### 添加新分析模块
 
@@ -159,13 +169,18 @@ make dashboard
 
 ## 数据来源说明
 
+`config/data_sources.py` 是数据源注册表与事实源；下表只汇总当前已注册数据源和默认后端。默认运行不需要 API Key，少数后端（如 `fredapi`）仅作为可选 fallback 或覆盖率增强。
+
 | 数据类型 | 来源库/API |
 |----------|-----------|
-| 美国 GDP、CPI、PMI、国债收益率 | `fredapi` (FRED) |
-| A 股行情 | `akshare` |
-| 美股、港股指数及个股 | `yfinance` |
-| 黄金、原油、外汇 | `yfinance` |
-| VIX 恐慌指数 | `yfinance` (^VIX) |
+| 美国 GDP、CPI、PMI、失业率、工业产出、联邦基金利率、NFCI | `fred_csv`（FRED 公共 CSV）；部分指标可选 `fredapi` fallback |
+| 美国 2Y / 10Y / 30Y 国债收益率 | `fred_csv`；可选 `treasury_gov` / `fredapi` fallback |
+| 中国 CPI | `akshare` |
+| 全球 GDP、欧元区 HICP | `worldbank` / `ecb_sdw` |
+| 美股、A 股、港股、日股指数 | `yfinance`；部分指数可选 `akshare` / `stooq` fallback |
+| 黄金、白银、WTI 原油 | `yfinance`；可选 `stooq` fallback |
+| DXY、EUR/USD | `yfinance`；部分汇率可选 `ecb_sdw` / `stooq` fallback |
+| VIX 恐慌指数 | `yfinance`；可选 `stooq` fallback |
 
 ---
 
