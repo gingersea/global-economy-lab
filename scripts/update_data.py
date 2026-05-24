@@ -44,6 +44,23 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated list of source keys to update (default: all)",
     )
     parser.add_argument(
+        "--category",
+        default="",
+        help="Only update sources matching this category (macro / equity / "
+        "bond / commodity / fx / sentiment).",
+    )
+    parser.add_argument(
+        "--region",
+        default="",
+        help="Only update sources matching this region (US / CN / EU / JP / "
+        "HK / Global).",
+    )
+    parser.add_argument(
+        "--since",
+        default="",
+        help="Alias for --start-date (ISO-8601, e.g. 2008-01-01).",
+    )
+    parser.add_argument(
         "--force-refresh",
         action="store_true",
         help="Ignore local cache and re-fetch all data",
@@ -174,9 +191,53 @@ _UPDATER_MAP = {
 }
 
 
+def _update_from_registry(
+    start_date: str,
+    end_date: str,
+    force_refresh: bool,
+    category: str = "",
+    region: str = "",
+) -> None:
+    """Update every source matching the (category, region) filter via the registry."""
+    import importlib
+
+    from config.data_sources import ALL_SOURCES
+
+    items = ALL_SOURCES
+    if category:
+        items = {k: v for k, v in items.items() if v.category == category}
+    if region:
+        items = {k: v for k, v in items.items() if v.region == region}
+
+    if not items:
+        logger.warning(
+            f"No registered sources match category={category!r} region={region!r}."
+        )
+        return
+
+    logger.info(f"Updating {len(items)} sources from registry…")
+    for key, cfg in items.items():
+        logger.info(f"  • {key} [{cfg.category}/{cfg.region}]")
+        try:
+            mod = importlib.import_module(cfg.fetcher_module)
+            cls = getattr(mod, cfg.fetcher_class)
+            fetcher = cls(**cfg.fetch_kwargs)
+            df = fetcher.fetch(
+                start_date=start_date,
+                end_date=end_date,
+                force_refresh=force_refresh,
+            )
+            n = 0 if df is None else len(df)
+            logger.success(f"    ✓ {key}: {n} rows")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"    ✗ {key}: {exc}")
+
+
 def main() -> None:
     """Entry point: update all (or selected) data sources."""
     args = parse_args()
+    if args.since:
+        args.start_date = args.since
 
     from config.settings import get_settings
 
@@ -186,6 +247,18 @@ def main() -> None:
     logger.info(f"  Period : {args.start_date} → {args.end_date}")
     logger.info(f"  Cache  : {settings.processed_data_dir}")
     logger.info("=" * 60)
+
+    # Registry-driven path: --category / --region select via DataSourceConfig.
+    if args.category or args.region:
+        _update_from_registry(
+            args.start_date,
+            args.end_date,
+            args.force_refresh,
+            category=args.category,
+            region=args.region,
+        )
+        logger.info("\n✓ Update complete.")
+        return
 
     requested = (
         [s.strip() for s in args.sources.split(",") if s.strip()]

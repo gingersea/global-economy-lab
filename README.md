@@ -72,28 +72,41 @@ poetry install
 
 ## 配置
 
-复制环境变量模板并填入 API 密钥：
+> ✅ **本项目无需任何 API Key 即可运行。**
+> 美国宏观与国债数据通过 FRED 公共 CSV 端点（`fred_csv` 后端）和美国财政部 Daily Par Yield Curve CSV（`treasury_gov` 后端）拉取；全球宏观经由 World Bank / ECB SDW 公开 API；股指、商品、汇率使用 yfinance / akshare / stooq。
+>
+> 详见 [`docs/data_sources.md`](docs/data_sources.md)。
+
+复制环境变量模板（可选）：
 
 ```bash
 cp .env.example .env
 ```
 
-然后编辑 `.env`：
+`.env` 中所有 Key 均为可选。如需使用 `fredapi` 作为 FRED CSV 的备份路径，可填入：
 
 ```
 FRED_API_KEY=your_fred_api_key_here
 ```
 
-> 🔑 **FRED API Key 免费申请**：[https://fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
+> 🔑 **FRED API Key 免费申请（可选）**：[https://fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
 
 ---
 
 ## 快速开始
 
+### 0. 一次性回灌 ≥15 年历史（可选）
+
+```bash
+python scripts/bootstrap_history.py --start-date 2008-01-01
+```
+
 ### 1. 更新本地数据缓存
 
 ```bash
 python scripts/update_data.py
+# 按类目 / 区域 / 起始日期：
+python scripts/update_data.py --category macro --region US --since 2010-01-01
 ```
 
 ### 2. 打开探索性分析 Notebook

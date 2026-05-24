@@ -49,13 +49,51 @@ class MacroEconomicFetcher(BaseFetcher):
     ) -> pd.DataFrame:
         """Route to the appropriate backend."""
         if self.source == "fred":
+            # Prefer the no-key CSV endpoint and fall back to the authenticated
+            # API only if explicitly configured with a key.
+            try:
+                return self._fetch_fred_csv(start_date, end_date)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    f"[{self.name}] fred_csv backend failed ({exc}); "
+                    "trying fredapi fallback."
+                )
+                return self._fetch_fred(start_date, end_date)
+        elif self.source == "fred_csv":
+            return self._fetch_fred_csv(start_date, end_date)
+        elif self.source == "fredapi":
             return self._fetch_fred(start_date, end_date)
         elif self.source == "akshare":
             return self._fetch_akshare(start_date, end_date)
+        elif self.source == "worldbank":
+            from src.data_fetcher.backends import worldbank
+
+            return worldbank.fetch_series(
+                self.series_id, start_date=start_date, end_date=end_date
+            )
+        elif self.source == "ecb_sdw":
+            from src.data_fetcher.backends import ecb_sdw
+
+            return ecb_sdw.fetch_series(
+                self.series_id, start_date=start_date, end_date=end_date
+            )
         else:
             raise ValueError(f"Unknown macro source: {self.source!r}")
 
     # ── Backend implementations ───────────────────────────────────────────────
+
+    def _fetch_fred_csv(
+        self, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch a FRED series via the public, key-less CSV endpoint."""
+        from src.data_fetcher.backends import fred_csv
+
+        df = fred_csv.fetch_series(
+            self.series_id, start_date=start_date, end_date=end_date
+        )
+        # Preserve original column for backwards compatibility with consumers
+        # that previously expected just ["value", "series_id"].
+        return df
 
     def _fetch_fred(self, start_date: str, end_date: str) -> pd.DataFrame:
         """Fetch a FRED series using fredapi."""
