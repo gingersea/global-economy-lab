@@ -4,6 +4,8 @@
 
 > **总原则**：FRED 公共 CSV 端点 (`https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>`) 完全免费、不需要 Key，可替代 `fredapi` 几乎所有调用。`MacroEconomicFetcher` 与 `BondsFetcher` 默认走 `fred_csv` 后端，并将 `fredapi` 作为可选 fallback。
 
+第一阶段的数据收集优先级、回测目标和 TODO 维护在 [`phase1_execution_plan.md`](phase1_execution_plan.md)。如数据源注册表发生变化，应同步更新本文档与第一阶段执行方案中的核心数据清单。
+
 ---
 
 ## 1. 美国宏观 (Macro / US)
