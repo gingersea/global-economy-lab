@@ -48,6 +48,8 @@ Thumbs.db
 # ── Data directory: ignore actual data files, keep structure ─
 data/raw/*
 data/processed/*
+data/_meta/*
+data/snapshots/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
