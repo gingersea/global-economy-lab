@@ -1,9 +1,9 @@
 """
-Daily short-term asset predictor — factor-based.
+Daily short-term asset predictor — Kalman filter based.
 
-Uses the same multi-factor ensemble as the macro predictor.
-Confidence = rolling directional accuracy (sign(pred) vs sign(actual)),
-unified across daily and monthly timeframes.
+Uses the DFM's filtered latent state as the composite signal source.
+Confidence from Kalman state covariance.  Asset-level signals are
+composite × per-asset momentum overlay.
 """
 
 from __future__ import annotations
@@ -19,33 +19,17 @@ from src.analysis.factor_ensemble import FactorEnsemble, FactorEnsembleConfig
 
 @dataclass
 class DailyPrediction:
-    """Single-day prediction for all assets.
-
-    Attributes:
-        date:              Prediction date.
-        composite_signal:  Ensemble composite at this day.
-        confidence:        Rolling directional accuracy (same definition
-                           as monthly — sign(pred) == sign(actual)).
-        factor_signals:    Per-factor signal values at this day.
-        asset_signals:     Per-asset directional signals.
-        factor_weights:    Adapted factor weights.
-    """
-
     date: pd.Timestamp
     composite_signal: float
     confidence: float
     factor_signals: Dict[str, float] = field(default_factory=dict)
     asset_signals: Dict[str, float] = field(default_factory=dict)
-    factor_weights: Dict[str, float] = field(default_factory=dict)
+    forward_pred_mean: float = 0.0
+    forward_pred_lower: float = 0.0
+    forward_pred_upper: float = 0.0
 
 
 class DailyAssetPredictor:
-    """Generate daily directional signals from the factor ensemble.
-
-    Args:
-        config: :class:`FactorEnsembleConfig` for the underlying ensemble.
-    """
-
     def __init__(self, config: Optional[FactorEnsembleConfig] = None):
         self.config = config or FactorEnsembleConfig()
         self.ensemble = FactorEnsemble(self.config)
@@ -59,32 +43,19 @@ class DailyAssetPredictor:
         risk_series: Optional[pd.Series] = None,
         forward_returns: Optional[pd.Series] = None,
     ) -> DailyPrediction:
-        """Run factor ensemble at daily frequency.
-        Confidence = rolling directional accuracy from ensemble.
-        """
-        result = self.ensemble.run(
-            asset_prices=asset_prices,
-            macro_indicators=macro_indicators,
-            yield_short=yield_short,
-            yield_long=yield_long,
-            risk_series=risk_series,
-            forward_returns=forward_returns,
-        )
+        result = self.ensemble.run(asset_prices, macro_indicators, yield_short, yield_long, risk_series, forward_returns)
 
         if result.composite.empty:
             return DailyPrediction(date=pd.Timestamp.now(), composite_signal=0.0, confidence=0.5)
 
         last_date = result.composite.index[-1]
         last_signal = float(result.composite.iloc[-1])
-
-        confidence = 0.5
-        if result.daily_confidence is not None and not result.daily_confidence.empty:
-            confidence = float(result.daily_confidence.iloc[-1])
+        confidence = float(result.forward_pred.confidence[0]) if result.forward_pred is not None else 0.3
 
         factor_vals = {}
         if not result.factor_signals.empty:
             last_row = result.factor_signals.iloc[-1]
-            factor_vals = {col: round(float(last_row[col]), 4) for col in last_row.index}
+            factor_vals = {str(col): round(float(last_row[col]), 4) for col in last_row.index}
 
         asset_sigs = {}
         for asset, px in asset_prices.items():
@@ -93,21 +64,24 @@ class DailyAssetPredictor:
             aligned = px.reindex(result.composite.index)
             if aligned.dropna().empty:
                 continue
-            asset_ret = aligned.pct_change(fill_method=None).tail(20)
-            asset_mom = np.tanh(asset_ret.mean() * 100) if not asset_ret.empty else 0.0
-            asset_sigs[asset] = round(float(last_signal * 0.7 + asset_mom * 0.3), 4)
+            ret = aligned.pct_change(fill_method=None).tail(20)
+            mom = np.tanh(ret.mean() * 100) if not ret.empty else 0.0
+            asset_sigs[asset] = round(float(last_signal * 0.7 + mom * 0.3), 4)
+
+        fwd_mean = fwd_lower = fwd_upper = 0.0
+        if result.forward_pred is not None:
+            fwd_mean = float(result.forward_pred.state_mean[0, 0])
+            fwd_lower = float(result.forward_pred.conf_lower[0, 0])
+            fwd_upper = float(result.forward_pred.conf_upper[0, 0])
 
         return DailyPrediction(
-            date=last_date,
-            composite_signal=round(last_signal, 4),
-            confidence=round(confidence, 4),
-            factor_signals=factor_vals,
+            date=last_date, composite_signal=round(last_signal, 4),
+            confidence=round(confidence, 4), factor_signals=factor_vals,
             asset_signals=asset_sigs,
-            factor_weights=result.factor_weights,
+            forward_pred_mean=round(fwd_mean, 4),
+            forward_pred_lower=round(fwd_lower, 4),
+            forward_pred_upper=round(fwd_upper, 4),
         )
 
 
-__all__ = [
-    "DailyPrediction",
-    "DailyAssetPredictor",
-]
+__all__ = ["DailyPrediction", "DailyAssetPredictor"]

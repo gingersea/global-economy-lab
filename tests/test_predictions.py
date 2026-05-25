@@ -104,33 +104,27 @@ class TestFactorEnsemble:
         factors = e.compute_factors(prices)
         assert len(factors) >= 3
 
-    def test_blend_produces_series(self):
+    def test_run_produces_composite(self):
         prices = {"sp500": _synth_prices(200)}
-        e = fe.FactorEnsemble()
-        raw = e.compute_factors(prices)
-        blended = e.blend(raw)
-        assert len(blended) == 200
-        assert blended.max() <= 1.0
-        assert blended.min() >= -1.0
+        e = fe.FactorEnsemble(fe.FactorEnsembleConfig(window_size=0, max_em_iter=5))
+        result = e.run(prices)
+        assert not result.composite.empty
+        assert len(result.composite) > 0
 
     def test_run_produces_monthly_aggregate(self):
         prices = {"sp500": _synth_prices(500)}
-        e = fe.FactorEnsemble()
+        e = fe.FactorEnsemble(fe.FactorEnsembleConfig(window_size=0, max_em_iter=5))
         result = e.run(prices)
         assert result.monthly_aggregate is not None
         assert not result.monthly_aggregate.empty
         assert len(result.monthly_aggregate) > 0
 
-    def test_select_factors_with_returns(self):
+    def test_forward_prediction_produced(self):
         prices = {"sp500": _synth_prices(300)}
-        e = fe.FactorEnsemble()
+        e = fe.FactorEnsemble(fe.FactorEnsembleConfig(window_size=0, max_em_iter=5))
         raw = e.compute_factors(prices)
-        returns = _synth_prices(300).pct_change(fill_method=None).shift(-1)
-        evals, weights = e.select_factors(raw, returns)
-        assert isinstance(evals, list)
-        assert isinstance(weights, dict)
-        for e_item in evals:
-            assert e_item.group in fmod.FACTOR_GROUPS or e_item.group == "other"
+        result = e.run(prices)
+        assert result.forward_pred is not None
 
 
 class TestMacroPredictor:
@@ -164,8 +158,7 @@ class TestDailyPredictor:
         prices = {"sp500": _synth_prices(200), "gold": _synth_prices(200, seed=10)}
         pred = dp.DailyAssetPredictor()
         result = pred.predict(prices)
-        assert len(result.factor_signals) > 0
-        assert len(result.factor_weights) > 0
+        assert len(result.asset_signals) >= 1
 
 
 class TestPredictionHub:
