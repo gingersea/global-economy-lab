@@ -151,6 +151,7 @@ class KalmanFilter:
                 y_valid = y
 
             S = H_valid @ P_pred[t] @ H_valid.T + R_valid
+            S += np.eye(len(S)) * 1e-6
             S_inv = np.linalg.inv(S)
             K = P_pred[t] @ H_valid.T @ S_inv
 

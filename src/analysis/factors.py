@@ -34,6 +34,7 @@ FACTOR_GROUPS: Dict[str, List[str]] = {
     "leading":      ["leading_indicator"],
     "policy":       ["policy_uncertainty"],
     "inflation":    ["inflation_expectations"],
+    "cross_market": ["cross_market_sync"],
 }
 
 FACTOR_LITERATURE: Dict[str, str] = {
@@ -61,6 +62,9 @@ FACTOR_LITERATURE: Dict[str, str] = {
                           "EPU index as political/regulatory risk factor.",
     "inflation_expectations": "Faust & Wright (2013) — Forecasting inflation. "
                               "Breakeven inflation as market-implied expectations.",
+    "cross_market_sync": "Longin & Solnik (2001) — Extreme correlation of international equity markets. "
+                         "Cross-market synchronization as global risk appetite signal. "
+                         "Higher sync = risk-on, diverging markets = risk-off.",
 }
 
 
@@ -274,6 +278,38 @@ def inflation_expectations(breakeven_series: pd.Series, lookback: int = 60) -> p
     return zscore(breakeven_series, lookback)
 
 
+def cross_market_sync(
+    asset_returns: Dict[str, pd.Series],
+    lookback: int = 60,
+) -> pd.Series:
+    """Cross-market synchronization (Longin & Solnik 2001).
+
+    Average pairwise correlation of global asset returns over a rolling window.
+    High sync = global risk-on / contagion.  Low sync = divergence / risk-off.
+
+    Returns signal in [-1, 1] where positive = synchronized (risk-on).
+    """
+    if not asset_returns or len(asset_returns) < 2:
+        return pd.Series(dtype=float)
+    ret_df = pd.DataFrame(asset_returns).dropna(how='all')
+    if ret_df.shape[1] < 2:
+        return pd.Series(dtype=float)
+    rolling_corr = ret_df.rolling(lookback, min_periods=lookback // 2).corr()
+    n_assets = ret_df.shape[1]
+    sync = pd.Series(0.0, index=ret_df.index, dtype=float)
+    for t in range(lookback, len(ret_df)):
+        try:
+            corr_mat = rolling_corr.iloc[t * n_assets:(t + 1) * n_assets]
+            if corr_mat.shape[0] < 2:
+                continue
+            avg_corr = (corr_mat.values.sum() - n_assets) / (n_assets * (n_assets - 1))
+            sync.iloc[t] = avg_corr
+        except Exception:
+            continue
+    sync = sync.fillna(0)
+    return np.tanh(sync * 3).clip(-1, 1)
+
+
 def _compute_all_factors(
     asset_prices: Dict[str, pd.Series],
     macro_indicators: Dict[str, pd.Series],
@@ -327,6 +363,10 @@ def _compute_all_factors(
 
     if breakeven_series is not None and not breakeven_series.empty:
         factors["inflation_expectations"] = inflation_expectations(breakeven_series)
+
+    if len(asset_prices) >= 3:
+        asset_rets = {k: px.pct_change(fill_method=None) for k, px in asset_prices.items() if px is not None and not px.empty}
+        factors["cross_market_sync"] = cross_market_sync(asset_rets)
 
     return factors
 
