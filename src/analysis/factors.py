@@ -1,20 +1,18 @@
 """
-Unified multi-factor library.
+Unified multi-factor library with economic rationale.
 
-Every factor is a pure function: ``(prices_or_indicators, **params) → pd.Series``.
-Factors work at any frequency (daily, weekly, monthly) — the caller controls
-resolution via the input data.  All outputs are standardised to approximately
-[-1, 1] for ensemble compatibility.
+Every factor is grounded in academic literature.  Factors are grouped
+into economic categories to handle cross-factor correlations.
 
-Factors cover:
-- Price momentum (multi-timeframe)
-- Mean reversion
-- Volatility regime
-- Carry / yield curve
-- Macro diffusion (breadth of improving indicators)
-- Cross-asset momentum (relative strength)
-- Global composite trend
-- Credit / risk appetite
+Categories:
+- Momentum:    Trend-following across timeframes (Jegadeesh & Titman 1993)
+- Value/Mean-Reversion: Short-term reversal (De Bondt & Thaler 1985; Poterba & Summers 1988)
+- Volatility:  Risk regime detection (Schwert 1989; Bollerslev 1986)
+- Carry:       Yield curve & rate expectations (Campbell & Shiller 1991; Fama & Bliss 1987)
+- Macro:       Diffusion index & global trends (Stock & Watson 2002; Ludvigson & Ng 2009)
+- Risk:        Credit & financial conditions (Gilchrist & Zakrajsek 2012; Adrian, Crump & Moench 2015)
+
+All factors: (prices_or_indicators, **params) → pd.Series in [-1, 1].
 """
 
 from __future__ import annotations
@@ -23,6 +21,35 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
+
+
+FACTOR_GROUPS: Dict[str, List[str]] = {
+    "momentum":     ["trend_momentum", "cross_asset_momentum"],
+    "value":        ["mean_reversion"],
+    "volatility":   ["volatility_regime"],
+    "carry":        ["carry_yield_curve"],
+    "macro":        ["macro_diffusion", "global_composite"],
+    "risk":         ["credit_risk"],
+}
+
+FACTOR_LITERATURE: Dict[str, str] = {
+    "trend_momentum": "Jegadeesh & Titman (1993) — Returns to buying winners and selling losers. "
+                      "Multi-timeframe extension per Moskowitz, Ooi & Pedersen (2012).",
+    "mean_reversion": "De Bondt & Thaler (1985) — Does the stock market overreact? "
+                      "Short-term reversal per Jegadeesh (1990).",
+    "volatility_regime": "Schwert (1989) — Why does stock market volatility change over time? "
+                         "Volatility clustering per Bollerslev (1986) GARCH.",
+    "carry_yield_curve": "Campbell & Shiller (1991) — Yield spreads and interest rate movements. "
+                         "Fama & Bliss (1987) — The information in long-maturity forward rates.",
+    "macro_diffusion": "Stock & Watson (2002) — Macroeconomic forecasting using diffusion indexes. "
+                       "Breadth of improving indicators signals expansion/contraction.",
+    "cross_asset_momentum": "Asness, Moskowitz & Pedersen (2013) — Value and momentum everywhere. "
+                            "Cross-asset relative strength across equities, bonds, commodities, FX.",
+    "global_composite": "Ludvigson & Ng (2009) — Macro factors in bond risk premia. "
+                        "Multi-region composite trend from macro indicators.",
+    "credit_risk": "Gilchrist & Zakrajsek (2012) — Credit spreads and business cycle fluctuations. "
+                   "NFCI: Adrian, Crump & Moench (2015) — Financial conditions indexes.",
+}
 
 
 def zscore(series: pd.Series, lookback: int = 252) -> pd.Series:
@@ -36,9 +63,10 @@ def zscore(series: pd.Series, lookback: int = 252) -> pd.Series:
 
 
 def trend_momentum(prices: pd.Series, fast: int = 20, medium: int = 60, slow: int = 120) -> pd.Series:
-    """Multi-timeframe momentum: weighted average of fast/medium/slow trend.
+    """Multi-timeframe momentum (Jegadeesh & Titman 1993).
 
-    Returns signal in [-1, 1] where positive = uptrend.
+    Weighted average of fast/medium/slow trend signals.
+    Positive = uptrend across timeframes.
     """
     if prices is None or len(prices) < max(fast, medium, slow):
         return pd.Series(0.0, index=prices.index if prices is not None else pd.DatetimeIndex([]))
@@ -49,9 +77,9 @@ def trend_momentum(prices: pd.Series, fast: int = 20, medium: int = 60, slow: in
 
 
 def mean_reversion(prices: pd.Series, lookback: int = 10) -> pd.Series:
-    """Short-term mean reversion: negative of deviation from SMA.
+    """Short-term mean reversion (De Bondt & Thaler 1985).
 
-    Positive = oversold (bullish), negative = overbought (bearish).
+    Negative of deviation from SMA. Positive = oversold (bullish reversal expected).
     """
     if prices is None or len(prices) < lookback:
         return pd.Series(0.0, index=prices.index if prices is not None else pd.DatetimeIndex([]))
@@ -61,9 +89,9 @@ def mean_reversion(prices: pd.Series, lookback: int = 10) -> pd.Series:
 
 
 def volatility_regime(prices: pd.Series, lookback: int = 20, vol_lookback: int = 252) -> pd.Series:
-    """Volatility regime: current vol vs historical vol percentile.
+    """Volatility regime detection (Schwert 1989; Bollerslev 1986).
 
-    Positive = low vol (risk-on), negative = high vol (risk-off).
+    Current vol vs historical vol percentile. Positive = low vol (risk-on).
     """
     if prices is None or len(prices) < max(lookback, vol_lookback):
         return pd.Series(0.0, index=prices.index if prices is not None else pd.DatetimeIndex([]))
@@ -80,8 +108,9 @@ def carry_yield_curve(
     long_rate: Union[pd.Series, float],
     lookback: int = 252,
 ) -> pd.Series:
-    """Yield curve slope as a factor: steep = expansionary, flat/inverted = restrictive.
+    """Yield curve slope (Campbell & Shiller 1991; Fama & Bliss 1987).
 
+    Steep curve = expansionary expectations. Flat/inverted = restrictive.
     Normalised as z-score of (long - short) spread.
     """
     if isinstance(short_rate, (int, float)):
@@ -96,10 +125,10 @@ def macro_diffusion(
     indicators: Dict[str, pd.Series],
     lookback: int = 6,
 ) -> pd.Series:
-    """Fraction of macro indicators that are improving over *lookback* months.
+    """Diffusion index (Stock & Watson 2002).
 
-    1.0 = all improving (expansion), 0.0 = all deteriorating (contraction).
-    Centered to [-1, 1].
+    Fraction of macro indicators improving over lookback.
+    1.0 = all improving (broad expansion), 0.0 = all deteriorating (broad contraction).
     """
     if not indicators:
         return pd.Series(dtype=float)
@@ -123,10 +152,10 @@ def cross_asset_momentum(
     asset_prices: Dict[str, pd.Series],
     lookback: int = 60,
 ) -> pd.DataFrame:
-    """Relative momentum across assets.  Returns a DataFrame with one column
-    per asset, where values are the asset's return rank (0-1) among peers.
+    """Cross-asset relative momentum (Asness, Moskowitz & Pedersen 2013).
 
-    High rank = strong relative momentum.
+    Returns per-asset rank (0-1) among peers based on recent returns.
+    High rank = strong relative momentum across asset classes.
     """
     if not asset_prices:
         return pd.DataFrame()
@@ -154,9 +183,10 @@ def global_composite_trend(
     regional_indicators: Dict[str, pd.Series],
     lookback: int = 60,
 ) -> pd.Series:
-    """Composite global trend from multiple regional indicators.
+    """Global composite trend (Ludvigson & Ng 2009).
 
-    Each indicator is z-scored, then averaged.  Higher = stronger global growth.
+    Multi-region macro indicator composite via z-score averaging.
+    Higher = stronger synchronized global growth.
     """
     if not regional_indicators:
         return pd.Series(dtype=float)
@@ -177,9 +207,10 @@ def global_composite_trend(
 
 
 def credit_risk(risk_series: pd.Series, lookback: int = 252) -> pd.Series:
-    """Credit/risk appetite factor.  Uses NFCI, VIX, or credit spreads.
+    """Credit/risk appetite (Gilchrist & Zakrajsek 2012).
 
-    Higher risk indicator → negative signal (risk-off).
+    Higher risk indicator → tighter financial conditions → negative signal (risk-off).
+    Uses NFCI, VIX, or credit spread as input.
     """
     if risk_series is None or risk_series.empty:
         return pd.Series(dtype=float)
@@ -194,11 +225,6 @@ def _compute_all_factors(
     yield_long: Optional[pd.Series] = None,
     risk_series: Optional[pd.Series] = None,
 ) -> Dict[str, pd.Series]:
-    """Compute all factor signals for the given inputs.
-
-    Returns a dict of factor_name → signal_series.
-    Asset-level factors are averaged across assets.
-    """
     factors: Dict[str, pd.Series] = {}
 
     asset_factors = {}
@@ -210,7 +236,6 @@ def _compute_all_factors(
             "mean_reversion": mean_reversion(px),
             "volatility_regime": volatility_regime(px),
         }
-
     if asset_factors:
         for fname in ["trend_momentum", "mean_reversion", "volatility_regime"]:
             series_list = [af[fname] for af in asset_factors.values() if not af[fname].empty]
@@ -235,6 +260,8 @@ def _compute_all_factors(
 
 
 __all__ = [
+    "FACTOR_GROUPS",
+    "FACTOR_LITERATURE",
     "zscore",
     "trend_momentum",
     "mean_reversion",

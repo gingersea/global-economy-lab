@@ -1,21 +1,21 @@
 """
-Multi-factor ensemble.
+Multi-factor ensemble with correlation-aware factor selection.
 
-Combines factor signals (from :mod:`src.analysis.factors`) into a single
-composite prediction using performance-weighted blending.
+Factors are grouped by economic category (momentum, value, volatility,
+carry, macro, risk).  Within each group, factors share a weight budget
+to prevent correlated signals from dominating the ensemble.
 
-Key design principle: **monthly = integral of daily**.
+Monthly prediction = multi-month adaptive aggregation of daily signals,
+using EMA with variable span based on volatility regime — cycles have
+different durations, and the aggregation window should adapt.
 
-Confidence is defined uniformly across timeframes as **rolling directional
-accuracy**: the hit rate of ``sign(prediction) == sign(actual forward return)``
-over a configurable lookback window.  Both daily and monthly use the exact
-same metric — the only difference is the sampling frequency.
+Confidence = rolling directional accuracy, unified across timeframes.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -41,20 +41,37 @@ class FactorEnsembleConfig:
     """Configuration for :class:`FactorEnsemble`.
 
     Attributes:
-        factor_weights:       Initial weight per factor (normalised to sum=1).
-        adaptation_lookback:  Periods for evaluating factor performance.
-        min_weight:           Floor for any factor weight after adaptation.
-        daily_accuracy_window: Trading days for rolling daily accuracy.
+        selection_lookback:     Periods for evaluating factor accuracy.
+        daily_accuracy_window:  Trading days for rolling daily accuracy.
         monthly_accuracy_window: Months for rolling monthly accuracy.
+        adaptive_ema_base:      Base EMA span for monthly aggregation.
     """
 
-    factor_weights: Dict[str, float] = field(
-        default_factory=lambda: dict(DEFAULT_FACTOR_WEIGHTS)
-    )
-    adaptation_lookback: int = 60
-    min_weight: float = 0.02
+    selection_lookback: int = 252
     daily_accuracy_window: int = 60
     monthly_accuracy_window: int = 12
+    adaptive_ema_base: float = 2.0
+
+
+@dataclass
+class FactorEval:
+    """Per-factor evaluation result.
+
+    Attributes:
+        name:        Factor name.
+        group:       Economic category group.
+        accuracy:    Directional hit rate over lookback.
+        selected:    Whether this factor passed accuracy threshold.
+        reliability: 'reliable' (>52%), 'marginal' (50-52%), 'unreliable' (<50%).
+        weight:      Assigned weight in the blend (0 if not selected).
+    """
+
+    name: str
+    group: str
+    accuracy: float
+    selected: bool
+    reliability: str
+    weight: float
 
 
 @dataclass
@@ -62,19 +79,19 @@ class EnsembleResult:
     """Output of the factor ensemble.
 
     Attributes:
-        composite:           Blended factor signal series (daily).
-        factor_signals:      DataFrame of individual factor signals (daily).
-        factor_weights:      Final weights used after adaptation.
-        daily_confidence:    Rolling directional accuracy at daily frequency
-                             (``sign(pred_t) == sign(ret_{t+1})`` hit rate).
-        monthly_aggregate:   Mean of daily composite over each month (integral).
-        monthly_confidence:  Rolling directional accuracy at monthly frequency
-                             (same definition as daily, aggregated).
+        composite:           Blended factor signal (daily).
+        factor_signals:      Raw individual factor signals (daily).
+        factor_weights:      Final weights per selected factor (group-aware).
+        factor_evals:        Per-factor accuracy evaluations.
+        daily_confidence:    Rolling directional accuracy (daily).
+        monthly_aggregate:   Adaptive multi-month aggregate of daily composite.
+        monthly_confidence:  Rolling directional accuracy (monthly).
     """
 
     composite: pd.Series
     factor_signals: pd.DataFrame
     factor_weights: Dict[str, float]
+    factor_evals: List[FactorEval] = field(default_factory=list)
     daily_confidence: Optional[pd.Series] = None
     monthly_aggregate: Optional[pd.Series] = None
     monthly_confidence: Optional[pd.Series] = None
@@ -85,17 +102,6 @@ def _rolling_directional_accuracy(
     forward_return: pd.Series,
     window: int,
 ) -> pd.Series:
-    """Compute rolling hit rate: fraction of periods where
-    ``sign(signal) == sign(forward_return)``.
-
-    Args:
-        signal:          Prediction signal (e.g. composite).
-        forward_return:  Actual forward-period return aligned with signal dates.
-        window:          Rolling window size.
-
-    Returns:
-        Series of hit rates in [0, 1], same index as signal.
-    """
     if signal is None or signal.empty or forward_return is None or forward_return.empty:
         return pd.Series(dtype=float)
     common = signal.index.intersection(forward_return.index)
@@ -104,16 +110,87 @@ def _rolling_directional_accuracy(
     s = signal.loc[common]
     r = forward_return.loc[common]
     correct = (np.sign(s) == np.sign(r)).astype(float)
-    accuracy = correct.rolling(window, min_periods=max(3, window // 4)).mean()
-    return accuracy.reindex(signal.index)
+    return correct.rolling(window, min_periods=max(3, window // 4)).mean().reindex(signal.index)
+
+
+def _adaptive_monthly_aggregate(
+    composite: pd.Series,
+    vol_regime: Optional[pd.Series] = None,
+    ema_base: float = 2.0,
+) -> pd.Series:
+    """Monthly aggregate with adaptive span.
+
+    Low vol (regimes persist) → longer span. High vol (regimes change
+    fast) → shorter span.  Current month mixes with prior months via
+    variable-speed EMA.
+    """
+    if composite is None or composite.empty:
+        return pd.Series(dtype=float)
+    monthly_mean = composite.resample("ME").mean()
+    monthly_mean.index = monthly_mean.index + pd.offsets.MonthEnd(0)
+    if vol_regime is None or vol_regime.empty:
+        return monthly_mean
+    vol_m = vol_regime.resample("ME").mean()
+    vol_m.index = vol_m.index + pd.offsets.MonthEnd(0)
+    common = monthly_mean.index.intersection(vol_m.index)
+    if len(common) < 3:
+        return monthly_mean
+    vol_c = vol_m.loc[common].clip(-0.8, 0.8)
+    span = (ema_base + vol_c * 2.0).clip(1.0, 4.0)
+    result = monthly_mean.loc[common].copy()
+    ema = float(result.iloc[0])
+    for i in range(1, len(common)):
+        alpha = 2.0 / (span.iloc[i] + 1.0)
+        ema = alpha * float(result.iloc[i]) + (1.0 - alpha) * ema
+        result.iloc[i] = ema
+    return result
+
+
+def _group_aware_weights(factor_evals: List[FactorEval]) -> Dict[str, float]:
+    """Group-aware weight allocation.
+
+    Each economic group gets one weight budget.  The best factor in each
+    group claims that budget.  This prevents correlated factors (e.g. two
+    momentum factors) from double-counting.
+    """
+    groups = fmod.FACTOR_GROUPS
+    eval_by_name = {e.name: e for e in factor_evals if e.selected}
+    if not eval_by_name:
+        return {}
+
+    group_scores: Dict[str, float] = {}
+    for gname, fnames in groups.items():
+        gfs = [eval_by_name[n] for n in fnames if n in eval_by_name]
+        if gfs:
+            group_scores[gname] = max(e.accuracy for e in gfs)
+
+    if not group_scores:
+        return {}
+
+    total = sum(v - 0.5 for v in group_scores.values()) or 1.0
+    gw = {g: max(0.0, (s - 0.5) / total) for g, s in group_scores.items()}
+    total_gw = sum(gw.values()) or 1.0
+    gw = {g: w / total_gw for g, w in gw.items()}
+
+    weights: Dict[str, float] = {}
+    for gname, fnames in groups.items():
+        w = gw.get(gname, 0.0)
+        if w <= 0:
+            continue
+        gfs = [eval_by_name[n] for n in fnames if n in eval_by_name]
+        if not gfs:
+            continue
+        best = max(gfs, key=lambda e: e.accuracy)
+        weights[best.name] = round(w, 4)
+    return weights
 
 
 class FactorEnsemble:
-    """Unified multi-factor blending engine.
+    """Multi-factor ensemble with correlation-aware grouping.
 
-    Computes all factors, blends them with adaptive weights, and produces
-    outputs at both daily and monthly resolution with **unified confidence**
-    (rolling directional accuracy).
+    Factors grouped by economic category.  Within-group factors share
+    a weight budget; across-group weights proportional to group accuracy.
+    Monthly aggregation uses adaptive EMA span based on volatility regime.
 
     Args:
         config: :class:`FactorEnsembleConfig`.
@@ -122,85 +199,82 @@ class FactorEnsemble:
     def __init__(self, config: Optional[FactorEnsembleConfig] = None):
         self.config = config or FactorEnsembleConfig()
 
-    def compute_factors(
-        self,
-        asset_prices: Dict[str, pd.Series],
-        macro_indicators: Optional[Dict[str, pd.Series]] = None,
-        yield_short: Optional[pd.Series] = None,
-        yield_long: Optional[pd.Series] = None,
-        risk_series: Optional[pd.Series] = None,
-    ) -> Dict[str, pd.Series]:
+    def compute_factors(self, asset_prices, macro_indicators=None,
+                        yield_short=None, yield_long=None, risk_series=None):
         return fmod._compute_all_factors(
             asset_prices=asset_prices,
             macro_indicators=macro_indicators or {},
-            yield_short=yield_short,
-            yield_long=yield_long,
+            yield_short=yield_short, yield_long=yield_long,
             risk_series=risk_series,
         )
 
-    def adapt_weights(
-        self,
-        factor_signals: pd.DataFrame,
-        forward_returns: Optional[pd.Series] = None,
-    ) -> Dict[str, float]:
-        weights = dict(self.config.factor_weights)
-        if forward_returns is None or forward_returns.empty or factor_signals.empty:
-            total = sum(weights.values())
-            return {k: v / total for k, v in weights.items()}
-        common_idx = factor_signals.index.intersection(forward_returns.index)
-        if len(common_idx) < self.config.adaptation_lookback // 2:
-            return weights
-        lookback = min(self.config.adaptation_lookback, len(common_idx))
-        recent_signals = factor_signals.loc[common_idx[-lookback:]]
-        recent_fwd = forward_returns.loc[common_idx[-lookback:]]
-        ir_scores: Dict[str, float] = {}
-        for col in recent_signals.columns:
-            sig = recent_signals[col].dropna()
-            ret = recent_fwd.reindex(sig.index).dropna()
-            common = sig.index.intersection(ret.index)
-            if len(common) < 10:
-                ir_scores[col] = 0.0
-                continue
-            s = sig.loc[common]
-            r = ret.loc[common].shift(-1).dropna()
-            common2 = s.index.intersection(r.index)
-            if len(common2) < 5:
-                ir_scores[col] = 0.0
-                continue
-            corr = s.loc[common2].corr(r.loc[common2])
-            ir_scores[col] = max(0.0, corr) * abs(s.loc[common2].mean())
-        total_ir = sum(ir_scores.values()) or 1.0
-        adapted = {}
-        for name, base_w in weights.items():
-            ir = ir_scores.get(name, 0.0)
-            adapted[name] = max(self.config.min_weight, 0.5 * base_w + 0.5 * (ir / total_ir))
-        total = sum(adapted.values())
-        return {k: v / total for k, v in adapted.items()}
-
-    def blend(
+    def select_factors(
         self,
         factor_signals: Dict[str, pd.Series],
-        weights: Optional[Dict[str, float]] = None,
-    ) -> pd.Series:
-        weights = weights or self.config.factor_weights
-        if not factor_signals:
-            return pd.Series(dtype=float)
+        forward_returns: Optional[pd.Series] = None,
+    ) -> tuple[List[FactorEval], Dict[str, float]]:
+        """Evaluate each factor's directional accuracy.
+        Factors ≤ 50% are marked unreliable and excluded.
+        Weights allocated by economic group to prevent correlation double-counting.
+        """
+        groups = fmod.FACTOR_GROUPS
+        evals: List[FactorEval] = []
+
+        if forward_returns is None or forward_returns.empty:
+            for name in factor_signals:
+                g = next((g for g, fs in groups.items() if name in fs), "other")
+                evals.append(FactorEval(name=name, group=g, accuracy=0.5, selected=False, reliability="marginal", weight=0.0))
+            return evals, {}
+
+        lb = self.config.selection_lookback
+        for name, sig in factor_signals.items():
+            g = next((gn for gn, fs in groups.items() if name in fs), "other")
+            if sig is None or sig.empty:
+                evals.append(FactorEval(name=name, group=g, accuracy=0.5, selected=False, reliability="marginal", weight=0.0))
+                continue
+            common = sig.index.intersection(forward_returns.index)
+            if len(common) < lb // 4:
+                evals.append(FactorEval(name=name, group=g, accuracy=0.5, selected=False, reliability="marginal", weight=0.0))
+                continue
+            s = sig.loc[common[-lb:]]
+            r = forward_returns.loc[common[-lb:]].shift(-1)
+            c2 = s.index.intersection(r.dropna().index)
+            if len(c2) < 20:
+                evals.append(FactorEval(name=name, group=g, accuracy=0.5, selected=False, reliability="marginal", weight=0.0))
+                continue
+            acc = round(float((np.sign(s.loc[c2]) == np.sign(r.loc[c2])).mean()), 4)
+            rel = "reliable" if acc >= 0.52 else ("marginal" if acc >= 0.50 else "unreliable")
+            selected = acc >= 0.50
+            evals.append(FactorEval(name=name, group=g, accuracy=acc, selected=selected, reliability=rel, weight=0.0))
+
+        weights = _group_aware_weights(evals)
+        for e in evals:
+            if e.name in weights:
+                e.weight = weights[e.name]
+
+        n_sel = len(weights)
+        n_rel = sum(1 for e in evals if e.reliability == "reliable")
+        n_unr = sum(1 for e in evals if e.reliability == "unreliable")
+        logger.info(f"FactorEnsemble: {n_sel}/{len(factor_signals)} factors selected (reliable: {n_rel}, unreliable: {n_unr})")
+        return evals, weights
+
+    def blend(self, factor_signals, weights=None, factor_evals=None):
+        weights = dict(weights or {})
+        if not weights and factor_signals:
+            eq_w = 1.0 / max(len(factor_signals), 1)
+            weights = {k: eq_w for k in factor_signals}
         idx = None
-        for s in factor_signals.values():
-            if s is not None and not s.empty:
-                idx = s.index
+        for name in weights:
+            if name in factor_signals and factor_signals[name] is not None and not factor_signals[name].empty:
+                idx = factor_signals[name].index
                 break
         if idx is None:
             return pd.Series(dtype=float)
         composite = pd.Series(0.0, index=idx, dtype=float)
-        total_w = 0.0
-        for name, weight in weights.items():
-            if name in factor_signals and factor_signals[name] is not None:
-                sig = factor_signals[name].reindex(idx).fillna(0.0)
-                composite = composite.add(sig * weight, fill_value=0.0)
-                total_w += weight
-        if total_w > 0:
-            composite = composite / total_w
+        for name, w in weights.items():
+            if name not in factor_signals or factor_signals[name] is None:
+                continue
+            composite = composite.add(factor_signals[name].reindex(idx).fillna(0.0) * w, fill_value=0.0)
         return composite.clip(-1, 1)
 
     def run(
@@ -212,25 +286,18 @@ class FactorEnsemble:
         risk_series: Optional[pd.Series] = None,
         forward_returns: Optional[pd.Series] = None,
     ) -> EnsembleResult:
-        """Execute the full ensemble pipeline with unified confidence.
+        raw = self.compute_factors(asset_prices, macro_indicators, yield_short, yield_long, risk_series)
+        if not raw:
+            return EnsembleResult(composite=pd.Series(dtype=float), factor_signals=pd.DataFrame(), factor_weights={})
 
-        Confidence = rolling hit rate of sign(pred) == sign(fwd_ret),
-        computed at both daily and monthly frequencies.
-        """
-        raw_factors = self.compute_factors(
-            asset_prices, macro_indicators, yield_short, yield_long, risk_series
-        )
-        if not raw_factors:
-            logger.warning("FactorEnsemble: no factors computed.")
-            return EnsembleResult(
-                composite=pd.Series(dtype=float),
-                factor_signals=pd.DataFrame(),
-                factor_weights=self.config.factor_weights,
-            )
+        factor_df = pd.DataFrame(raw).sort_index().dropna(how="all")
+        factor_evals, weights = self.select_factors(raw, forward_returns)
 
-        factor_df = pd.DataFrame(raw_factors).sort_index().dropna(how="all")
-        adapted_weights = self.adapt_weights(factor_df, forward_returns)
-        composite = self.blend(raw_factors, adapted_weights)
+        if not weights:
+            eq_w = 1.0 / max(len(raw), 1)
+            weights = {k: eq_w for k in raw}
+
+        composite = self.blend(raw, weights, factor_evals)
 
         daily_conf = None
         monthly_agg = None
@@ -239,39 +306,27 @@ class FactorEnsemble:
         if composite is not None and not composite.empty:
             if forward_returns is not None and not forward_returns.empty:
                 fwd_aligned = forward_returns.reindex(composite.index).shift(-1)
-                daily_conf = _rolling_directional_accuracy(
-                    composite, fwd_aligned, self.config.daily_accuracy_window
-                )
+                daily_conf = _rolling_directional_accuracy(composite, fwd_aligned, self.config.daily_accuracy_window)
 
-            monthly_agg = composite.resample("ME").mean()
-            monthly_agg.index = monthly_agg.index + pd.offsets.MonthEnd(0)
-            monthly_agg.name = "monthly_composite"
+            vol_signal = raw.get("volatility_regime")
+            monthly_agg = _adaptive_monthly_aggregate(composite, vol_signal, self.config.adaptive_ema_base)
 
             if daily_conf is not None and not daily_conf.empty:
                 monthly_conf = daily_conf.resample("ME").mean()
                 monthly_conf.index = monthly_conf.index + pd.offsets.MonthEnd(0)
-                monthly_conf.name = "monthly_confidence"
 
-        logger.info(
-            f"FactorEnsemble: {len(raw_factors)} factors → "
-            f"{len(composite)} daily obs, "
-            f"{len(monthly_agg) if monthly_agg is not None else 0} monthly aggregates."
-        )
+        logger.info(f"FactorEnsemble: {len(weights)} factors → {len(composite)} daily obs, {len(monthly_agg) if monthly_agg is not None else 0} monthly aggregates.")
         if daily_conf is not None and not daily_conf.empty:
-            logger.info(
-                f"  Daily accuracy:   {daily_conf.iloc[-1]:.1%} "
-                f"(rolling {self.config.daily_accuracy_window}d)"
-            )
+            logger.info(f"  Daily accuracy:   {daily_conf.iloc[-1]:.1%}")
         if monthly_conf is not None and not monthly_conf.empty:
-            logger.info(
-                f"  Monthly accuracy: {monthly_conf.iloc[-1]:.1%} "
-                f"(rolling {self.config.monthly_accuracy_window}mo)"
-            )
+            logger.info(f"  Monthly accuracy: {monthly_conf.iloc[-1]:.1%}")
+        for e in sorted(factor_evals, key=lambda x: -x.accuracy):
+            tag = "✓" if e.selected else "✗"
+            logger.info(f"  {tag} [{e.group:12s}] {e.name:25s} acc={e.accuracy:.1%} ({e.reliability}) w={e.weight:.3f}")
 
         return EnsembleResult(
-            composite=composite,
-            factor_signals=factor_df,
-            factor_weights=adapted_weights,
+            composite=composite, factor_signals=factor_df,
+            factor_weights=weights, factor_evals=factor_evals,
             daily_confidence=daily_conf,
             monthly_aggregate=monthly_agg,
             monthly_confidence=monthly_conf,
@@ -281,7 +336,10 @@ class FactorEnsemble:
 __all__ = [
     "DEFAULT_FACTOR_WEIGHTS",
     "FactorEnsembleConfig",
+    "FactorEval",
     "EnsembleResult",
     "FactorEnsemble",
     "_rolling_directional_accuracy",
+    "_adaptive_monthly_aggregate",
+    "_group_aware_weights",
 ]

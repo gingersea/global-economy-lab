@@ -121,16 +121,16 @@ class TestFactorEnsemble:
         assert not result.monthly_aggregate.empty
         assert len(result.monthly_aggregate) > 0
 
-    def test_adapt_weights_with_returns(self):
+    def test_select_factors_with_returns(self):
         prices = {"sp500": _synth_prices(300)}
         e = fe.FactorEnsemble()
         raw = e.compute_factors(prices)
-        factor_df = pd.DataFrame(raw)
         returns = _synth_prices(300).pct_change(fill_method=None).shift(-1)
-        adapted = e.adapt_weights(factor_df, returns)
-        assert abs(sum(adapted.values()) - 1.0) < 1e-9
-        for w in adapted.values():
-            assert w > 0
+        evals, weights = e.select_factors(raw, returns)
+        assert isinstance(evals, list)
+        assert isinstance(weights, dict)
+        for e_item in evals:
+            assert e_item.group in fmod.FACTOR_GROUPS or e_item.group == "other"
 
 
 class TestMacroPredictor:
