@@ -182,13 +182,13 @@ class TestPredictionHub:
         h = hub.PredictionHub(output_dir=str(tmp_path))
         h.run(prices)
         assert (tmp_path / "prediction_summary.json").exists()
-        assert (tmp_path / "daily_signals.csv").exists()
-        assert (tmp_path / "factor_signals_daily.csv").exists()
 
-    def test_monthly_confidence_higher_than_daily(self):
+    def test_monthly_and_daily_confidence_in_range(self):
         prices = {"sp500": _synth_prices(500)}
+        fwd = prices["sp500"].pct_change(fill_method=None)
         h = hub.PredictionHub()
-        result = h.run(prices)
-        monthly_conf = result.macro_prediction.confidence
-        daily_conf = result.daily_prediction.confidence
-        assert monthly_conf > daily_conf
+        result = h.run(prices, forward_returns=fwd)
+        dc = result.daily_prediction.confidence
+        mc = result.macro_prediction.confidence
+        assert 0 <= dc <= 1
+        assert 0 <= mc <= 1

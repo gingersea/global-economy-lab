@@ -137,25 +137,17 @@ class MacroRegimePredictor:
         yield_short: Optional[pd.Series] = None,
         yield_long: Optional[pd.Series] = None,
         risk_series: Optional[pd.Series] = None,
+        forward_returns: Optional[pd.Series] = None,
     ) -> MacroPrediction:
         """Run factor ensemble → aggregate to monthly → map to regime.
-
-        Args:
-            asset_prices:     Daily price series per asset.
-            macro_indicators: Macro indicator series.
-            yield_short:      2Y yield (daily).
-            yield_long:       10Y yield (daily).
-            risk_series:      VIX / NFCI.
-
-        Returns:
-            :class:`MacroPrediction` with regime and probabilities.
-        """
+        Confidence = rolling directional accuracy from ensemble (monthly)."""
         result = self.ensemble.run(
             asset_prices=asset_prices,
             macro_indicators=macro_indicators,
             yield_short=yield_short,
             yield_long=yield_long,
             risk_series=risk_series,
+            forward_returns=forward_returns,
         )
 
         if result.monthly_aggregate is None or result.monthly_aggregate.empty:
@@ -170,7 +162,9 @@ class MacroRegimePredictor:
             )
 
         last_signal = float(result.monthly_aggregate.iloc[-1])
-        confidence = float(result.monthly_confidence.iloc[-1]) if result.monthly_confidence is not None else 0.5
+        confidence = 0.5
+        if result.monthly_confidence is not None and not result.monthly_confidence.empty:
+            confidence = float(result.monthly_confidence.iloc[-1])
         regime, probs = _signal_to_regime(last_signal, confidence)
 
         contributions = {}

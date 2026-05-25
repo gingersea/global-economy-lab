@@ -109,6 +109,18 @@ def main():
             macro_indicators[key] = s
     logger.info(f"Loaded {len(macro_indicators)} macro indicators.")
 
+    fwd_returns = None
+    if asset_prices:
+        returns_list = []
+        for px in asset_prices.values():
+            if px is not None and not px.empty:
+                r = px.pct_change(fill_method=None)
+                if not r.empty:
+                    returns_list.append(r)
+        if returns_list:
+            fwd_returns = pd.concat(returns_list, axis=1).mean(axis=1)
+            logger.info(f"Computed equal-weighted forward returns ({len(fwd_returns)} obs).")
+
     hub = PredictionHub()
     result = hub.run(
         asset_prices=asset_prices,
@@ -116,12 +128,14 @@ def main():
         yield_short=yield_short,
         yield_long=yield_long,
         risk_series=risk_series,
+        forward_returns=fwd_returns,
     )
 
     mp = result.macro_prediction
     dp = result.daily_prediction
     logger.info(f"\n{'='*64}")
     logger.info("Prediction Results")
+    logger.info(f"  Confidence = rolling directional accuracy (sign(pred) == sign(actual))")
     logger.info(f"  {'─' * 40}")
     logger.info(f"  MONTHLY (integral of daily factors):")
     logger.info(f"    Composite signal: {mp.composite_signal:+.4f}")
