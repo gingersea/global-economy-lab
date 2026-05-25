@@ -111,7 +111,7 @@ def check_series(
     base["duplicate_dates"] = int(df.index.duplicated().sum())
 
     # Abnormal jumps: |z-score of pct change| > jump_z.
-    pct = series.pct_change()
+    pct = series.pct_change(fill_method=None)
     if pct.notna().sum() >= 3:
         std = pct.std(ddof=0)
         if std and not np.isnan(std):

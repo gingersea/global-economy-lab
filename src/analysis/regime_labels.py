@@ -42,18 +42,39 @@ class RegimeConfig:
 
     Tweaking thresholds is intentionally cheap to encourage robustness
     analysis (e.g. *what if PMI cutoff is 49 instead of 50?*).
+
+    When PMI is unavailable (e.g. ``us_pmi`` column missing from panel),
+    the config can be pointed at an alternative growth indicator such as
+    industrial production YoY (``us_industrial_production_yoy``), with a
+    different expansion threshold (e.g. ``0.0`` for positive YoY).
     """
 
-    pmi_col: str = "us_pmi"
+    growth_col: str = "us_pmi"
+    growth_threshold: float = 50.0
+    growth_smooth_window: int = 3
+
     cpi_yoy_col: str = "us_cpi_yoy"
+    cpi_high: float = 2.5  # percent YoY – above this counts as inflationary
+    cpi_smooth_window: int = 3
+
     unemp_diff_col: str = "us_unemployment_diff"
     curve_col: str = "yield_curve_10y2y"  # optional, computed if absent
     nfci_col: str = "us_nfci"             # optional
 
-    pmi_expansion: float = 50.0
-    cpi_high: float = 2.5  # percent YoY – above this counts as inflationary
-    pmi_smooth_window: int = 3
-    cpi_smooth_window: int = 3
+    @property
+    def pmi_col(self) -> str:  # noqa: D401
+        """Legacy alias for :attr:`growth_col`."""
+        return self.growth_col
+
+    @property
+    def pmi_expansion(self) -> float:  # noqa: D401
+        """Legacy alias for :attr:`growth_threshold`."""
+        return self.growth_threshold
+
+    @property
+    def pmi_smooth_window(self) -> int:  # noqa: D401
+        """Legacy alias for :attr:`growth_smooth_window`."""
+        return self.growth_smooth_window
 
 
 def _smooth(series: pd.Series, window: int) -> pd.Series:
@@ -111,9 +132,9 @@ def label_regimes(
 
     out = panel.copy()
 
-    if cfg.pmi_col not in out.columns:
+    if cfg.growth_col not in out.columns:
         raise KeyError(
-            f"label_regimes: panel is missing PMI column '{cfg.pmi_col}'. "
+            f"label_regimes: panel is missing growth column '{cfg.growth_col}'. "
             f"Available: {list(out.columns)}"
         )
     if cfg.cpi_yoy_col not in out.columns:
@@ -122,7 +143,7 @@ def label_regimes(
             f"'{cfg.cpi_yoy_col}'. Available: {list(out.columns)}"
         )
 
-    out["growth_signal"] = _smooth(out[cfg.pmi_col], cfg.pmi_smooth_window)
+    out["growth_signal"] = _smooth(out[cfg.growth_col], cfg.growth_smooth_window)
     out["inflation_signal"] = _smooth(out[cfg.cpi_yoy_col], cfg.cpi_smooth_window)
 
     # Optional unemployment confirmation signal (3-month change).
@@ -141,7 +162,7 @@ def label_regimes(
     }.issubset(out.columns):
         out[cfg.curve_col] = out["us_treasury_10y"] - out["us_treasury_2y"]
 
-    growing = out["growth_signal"] >= cfg.pmi_expansion
+    growing = out["growth_signal"] >= cfg.growth_threshold
     inflating = out["inflation_signal"] >= cfg.cpi_high
 
     regimes = []
@@ -162,23 +183,11 @@ def label_regimes(
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Regime-aware default target weights for the phase-1 backtest
+# Regime-aware default target weights for the phase-1 backtest.
+# Imported from the config module (single source of truth).
 # ─────────────────────────────────────────────────────────────────────
 
-# Asset universe in the rotation portfolio.  Each list of weights MUST
-# sum to 1.0.  These mirror the "第一版组合假设" table in the plan.
-DEFAULT_REGIME_WEIGHTS: dict[str, dict[str, float]] = {
-    # Recovery → equities & oil heavy
-    "recovery":    {"sp500_ret": 0.55, "crude_oil_wti_ret": 0.20, "gold_ret": 0.10, "dxy_ret": 0.05, "us_treasury_10y_ret": 0.10},
-    # Overheat → commodities & cash/dollar, less duration
-    "overheat":    {"sp500_ret": 0.20, "crude_oil_wti_ret": 0.30, "gold_ret": 0.20, "dxy_ret": 0.20, "us_treasury_10y_ret": 0.10},
-    # Stagflation → gold & dollar defensive
-    "stagflation": {"sp500_ret": 0.10, "crude_oil_wti_ret": 0.15, "gold_ret": 0.40, "dxy_ret": 0.25, "us_treasury_10y_ret": 0.10},
-    # Recession / slowdown → bonds & gold defensive
-    "recession":   {"sp500_ret": 0.15, "crude_oil_wti_ret": 0.05, "gold_ret": 0.30, "dxy_ret": 0.20, "us_treasury_10y_ret": 0.30},
-    # Unknown → equal weight defensive blend
-    "unknown":     {"sp500_ret": 0.20, "crude_oil_wti_ret": 0.20, "gold_ret": 0.20, "dxy_ret": 0.20, "us_treasury_10y_ret": 0.20},
-}
+from config.backtest import DEFAULT_REGIME_WEIGHTS  # noqa: E402
 
 
 def regime_target_weights(

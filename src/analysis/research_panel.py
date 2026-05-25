@@ -83,7 +83,7 @@ def daily_to_monthly_return(
     if method == "log":
         ret = np.log(monthly_px / monthly_px.shift(1))
     else:
-        ret = monthly_px.pct_change()
+        ret = monthly_px.pct_change(fill_method=None)
     return ret.rename("ret")
 
 
@@ -128,9 +128,9 @@ def macro_to_monthly(
     if transform == "level":
         out = monthly
     elif transform == "yoy":
-        out = monthly.pct_change(12) * 100.0
+        out = monthly.pct_change(12, fill_method=None) * 100.0
     elif transform == "mom":
-        out = monthly.pct_change(1) * 100.0
+        out = monthly.pct_change(1, fill_method=None) * 100.0
     elif transform == "diff":
         out = monthly.diff(1)
     else:  # yoy_diff

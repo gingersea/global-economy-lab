@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 import pandas as pd
+import numpy as np
 
 
 def equal_weight_target(
@@ -41,7 +42,7 @@ def equal_weight_target(
         return pd.DataFrame(index=returns.index)
 
     mask = returns[cols].notna().astype(float)
-    row_sum = mask.sum(axis=1).replace(0.0, pd.NA)
+    row_sum = mask.sum(axis=1).replace(0.0, np.nan)
     weights = mask.div(row_sum, axis=0).fillna(0.0)
     return weights
 

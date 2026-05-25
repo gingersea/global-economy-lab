@@ -42,7 +42,14 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.data_sources import ALL_SOURCES, DataSourceConfig  # noqa: E402
+from config.backtest import (  # noqa: E402
+    ASSET_KEYS,
+    MACRO_SPECS,
+    GROWTH_FALLBACK_COL,
+    GROWTH_FALLBACK_THRESHOLD,
+)
 from src.analysis import data_quality as dq  # noqa: E402
+from src.analysis import regime_attribution as ra  # noqa: E402
 from src.analysis import research_panel as rp  # noqa: E402
 from src.analysis import regime_labels as rl  # noqa: E402
 from src.backtest import (  # noqa: E402
@@ -50,19 +57,8 @@ from src.backtest import (  # noqa: E402
     buy_and_hold_target,
     equal_weight_target,
 )
+from src.visualization import phase1_charts as charts  # noqa: E402
 
-
-# Asset / macro universe needed by the phase-1 closed loop.  Keys must
-# match registry keys in ``config/data_sources.py``.
-ASSET_KEYS = ["sp500", "gold", "crude_oil_wti", "dxy", "us_treasury_10y"]
-MACRO_SPECS: Dict[str, str] = {
-    "us_pmi": "level",
-    "us_cpi": "yoy",
-    "us_unemployment": "diff",
-    "us_treasury_2y": "level",
-    "us_treasury_10y": "level",  # also kept as a level macro for the curve
-    "us_nfci": "level",
-}
 
 
 def parse_args() -> argparse.Namespace:
@@ -166,11 +162,28 @@ def main() -> int:
 
     # ── 3. Regime labels (signals lagged 1 month) ──────────────────
     lagged = rp.apply_signal_lag(panel, lag=1)
-    labelled = (
-        rl.label_regimes(lagged)
-        if {"us_pmi", "us_cpi_yoy"}.issubset(lagged.columns)
-        else None
-    )
+
+    # Choose growth indicator: prefer PMI, fall back to INDPRO YoY.
+    if "us_pmi" in lagged.columns:
+        regime_cfg = rl.RegimeConfig(growth_col="us_pmi", growth_threshold=50.0)
+    elif "us_industrial_production_yoy" in lagged.columns:
+        regime_cfg = rl.RegimeConfig(
+            growth_col=GROWTH_FALLBACK_COL,
+            growth_threshold=GROWTH_FALLBACK_THRESHOLD,
+        )
+        logger.info("Using INDPRO YoY as growth proxy (PMI unavailable).")
+    else:
+        regime_cfg = None
+        logger.warning("No growth indicator available — skipping regime labels.")
+
+    if regime_cfg is not None:
+        try:
+            labelled = rl.label_regimes(lagged, config=regime_cfg)
+        except Exception:
+            labelled = None
+            logger.warning("Regime labelling failed — skipping.")
+    else:
+        labelled = None
     if labelled is not None:
         labelled[["regime", "regime_label"]].to_csv(out_dir / "regime_labels.csv")
         regime_counts = labelled["regime"].value_counts().to_dict()
@@ -213,12 +226,84 @@ def main() -> int:
     equity_curves.to_csv(out_dir / "equity_curves.csv")
     logger.info("\n" + metrics_df.to_string())
 
+    if labelled is not None and not panel.empty:
+        try:
+            labelled_panel = panel.copy()
+            labelled_panel["regime"] = labelled["regime"]
+            labelled_panel["regime_label"] = labelled["regime_label"]
+        except Exception:
+            labelled_panel = None
+    else:
+        labelled_panel = None
+
+    heatmap = pd.DataFrame()
+    event_rets = pd.DataFrame()
+    annual_rets = pd.Series(dtype="float64")
+    if labelled_panel is not None:
+        heatmap = ra.regime_heatmap(labelled_panel)
+        event_rets = ra.event_window_returns(labelled_panel, start=args.start_date)
+        annual_rets = ra.calendar_year_returns(labelled_panel, "sp500_ret")
+
+        if not heatmap.empty:
+            heatmap.to_csv(out_dir / "regime_heatmap.csv")
+        if not event_rets.empty:
+            event_rets.to_csv(out_dir / "event_window_returns.csv")
+        if not annual_rets.empty:
+            annual_rets.to_frame("sp500_return").to_csv(out_dir / "calendar_year_returns.csv")
+
+    if not equity_curves.empty:
+        try:
+            fig = charts.equity_curve_plot(equity_curves)
+            fig.savefig(out_dir / "equity_curves.png", dpi=150, bbox_inches="tight")
+            import matplotlib.pyplot as plt
+            plt.close(fig)
+        except Exception:
+            logger.warning("Failed to save equity curves chart.")
+
+        try:
+            fig = charts.drawdown_plot(equity_curves)
+            fig.savefig(out_dir / "drawdown_curves.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except Exception:
+            logger.warning("Failed to save drawdown chart.")
+
+    if not heatmap.empty:
+        try:
+            fig = charts.regime_heatmap_plot(heatmap)
+            fig.savefig(out_dir / "regime_heatmap.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except Exception:
+            logger.warning("Failed to save regime heatmap chart.")
+
+    if not event_rets.empty:
+        try:
+            fig = charts.event_window_bar(event_rets)
+            fig.savefig(out_dir / "event_window_returns.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except Exception:
+            logger.warning("Failed to save event window chart.")
+
+    if not annual_rets.empty:
+        try:
+            fig = charts.annual_return_bar(annual_rets)
+            fig.savefig(out_dir / "calendar_year_returns.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except Exception:
+            logger.warning("Failed to save annual returns chart.")
+
     overall = {
         "status": "ok",
         "period": {"start": args.start_date, "end": args.end_date},
         "quality": summary,
         "regime_counts": regime_counts,
         "metrics": metrics_df.reset_index().to_dict(orient="records"),
+        "charts": [
+            "equity_curves.png",
+            "drawdown_curves.png",
+            "regime_heatmap.png",
+            "event_window_returns.png",
+            "calendar_year_returns.png",
+        ],
     }
     (out_dir / "phase1_summary.json").write_text(json.dumps(overall, indent=2, default=str))
     logger.success(f"Phase-1 artefacts written to {out_dir}")

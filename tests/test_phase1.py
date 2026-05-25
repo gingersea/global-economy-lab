@@ -183,7 +183,7 @@ def test_label_regimes_all_four_states():
         },
         index=idx,
     )
-    cfg = rl.RegimeConfig(pmi_smooth_window=1, cpi_smooth_window=1)
+    cfg = rl.RegimeConfig(growth_smooth_window=1, cpi_smooth_window=1)
     out = rl.label_regimes(panel, cfg)
     assert list(out["regime"]) == [
         "recovery",
@@ -201,7 +201,7 @@ def test_label_regimes_unknown_on_nan():
         {"us_pmi": [np.nan, 55.0], "us_cpi_yoy": [2.0, 1.0]},
         index=idx,
     )
-    cfg = rl.RegimeConfig(pmi_smooth_window=1, cpi_smooth_window=1)
+    cfg = rl.RegimeConfig(growth_smooth_window=1, cpi_smooth_window=1)
     out = rl.label_regimes(panel, cfg)
     assert out["regime"].iloc[0] == "unknown"
     assert out["regime"].iloc[1] in {"recovery", "overheat"}

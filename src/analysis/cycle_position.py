@@ -122,7 +122,7 @@ def get_cycle_position(
     result["pmi_smooth"] = result["pmi"].rolling(window=window, min_periods=1).mean()
 
     # ── CPI year-over-year % change ───────────────────────────────────────────
-    result["cpi_yoy"] = result["cpi"].pct_change(12) * 100
+    result["cpi_yoy"] = result["cpi"].pct_change(12, fill_method=None) * 100
 
     # ── Phase classification ──────────────────────────────────────────────────
     result["phase"] = result.apply(

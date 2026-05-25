@@ -51,7 +51,7 @@ def build_return_matrix(
         else:
             price_col_actual = price_col
         price_series = df[price_col_actual].resample(freq).last().dropna()
-        frames[name] = price_series.pct_change().rename(name)
+        frames[name] = price_series.pct_change(fill_method=None).rename(name)
 
     if not frames:
         return pd.DataFrame()

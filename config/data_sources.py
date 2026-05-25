@@ -40,6 +40,7 @@ class DataSourceConfig:
     prefers_api_key: bool = False
     api_key_env_var: Optional[str] = None
     notes: str = ""
+    publication_lag_days: int = 0
 
     # Back-compat alias – some early code reads ``requires_api_key``.
     @property
@@ -67,6 +68,7 @@ US_GDP = DataSourceConfig(
     backends=["fred_csv", "fredapi"],
     prefers_api_key=False,
     api_key_env_var="FRED_API_KEY",
+    publication_lag_days=30,
 )
 
 US_CPI = DataSourceConfig(
@@ -79,6 +81,7 @@ US_CPI = DataSourceConfig(
     category="macro",
     region="US",
     backends=["fred_csv", "fredapi"],
+    publication_lag_days=15,
 )
 
 US_CORE_CPI = DataSourceConfig(
@@ -91,6 +94,7 @@ US_CORE_CPI = DataSourceConfig(
     category="macro",
     region="US",
     backends=["fred_csv", "fredapi"],
+    publication_lag_days=15,
 )
 
 US_UNEMPLOYMENT = DataSourceConfig(
@@ -103,6 +107,7 @@ US_UNEMPLOYMENT = DataSourceConfig(
     category="macro",
     region="US",
     backends=["fred_csv"],
+    publication_lag_days=7,
 )
 
 US_INDPRO = DataSourceConfig(
@@ -115,6 +120,7 @@ US_INDPRO = DataSourceConfig(
     category="macro",
     region="US",
     backends=["fred_csv"],
+    publication_lag_days=15,
 )
 
 US_PMI = DataSourceConfig(
@@ -128,6 +134,7 @@ US_PMI = DataSourceConfig(
     region="US",
     backends=["fred_csv", "fredapi"],
     notes="FRED series NAPM is the ISM Manufacturing PMI.",
+    publication_lag_days=1,
 )
 
 US_FED_FUNDS_RATE = DataSourceConfig(
@@ -140,6 +147,7 @@ US_FED_FUNDS_RATE = DataSourceConfig(
     category="macro",
     region="US",
     backends=["fred_csv", "fredapi"],
+    publication_lag_days=0,
 )
 
 US_NFCI = DataSourceConfig(
@@ -152,6 +160,7 @@ US_NFCI = DataSourceConfig(
     category="sentiment",
     region="US",
     backends=["fred_csv"],
+    publication_lag_days=7,
 )
 
 CHINA_CPI = DataSourceConfig(
