@@ -215,6 +215,45 @@ US_EPU = DataSourceConfig(
     publication_lag_days=0,
 )
 
+US_PROD = DataSourceConfig(
+    name="us_labor_productivity",
+    description="US Labor Productivity (nonfarm), FRED OPHNFB",
+    update_frequency="quarterly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "OPHNFB"},
+    category="macro",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=60,
+)
+
+US_DEFENSE_GDP = DataSourceConfig(
+    name="us_defense_gdp",
+    description="US Defense/GDP ratio, FRED A824RE1Q156NBEA",
+    update_frequency="quarterly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "A824RE1Q156NBEA"},
+    category="macro",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=90,
+)
+
+US_INVEST = DataSourceConfig(
+    name="us_private_investment",
+    description="US Real Private Investment, FRED GPDIC1",
+    update_frequency="quarterly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "GPDIC1"},
+    category="macro",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=90,
+)
+
 CHINA_CPI = DataSourceConfig(
     name="china_cpi",
     description="China CPI YoY (%) via akshare",
@@ -443,6 +482,9 @@ ALL_SOURCES: Dict[str, DataSourceConfig] = {
     "us_building_permits": US_PERMIT,
     "us_breakeven_10y": US_BREAKEVEN_10Y,
     "us_epu": US_EPU,
+    "us_labor_productivity": US_PROD,
+    "us_defense_gdp": US_DEFENSE_GDP,
+    "us_private_investment": US_INVEST,
     # Equities
     "sp500": SP500,
     "csi300": CSI300,

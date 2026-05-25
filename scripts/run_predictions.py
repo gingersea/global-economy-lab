@@ -92,6 +92,7 @@ def main():
     macro_indicators: Dict[str, pd.Series] = {}
     yield_short = yield_long = risk_series = None
     m2_series = permit_series = epu_series = breakeven_series = None
+    prod_series = defense_series = invest_series = None
 
     for key, _ in MACRO_SPECS.items():
         s = _series_from_df(_safe_fetch(key, args.start_date, args.end_date), col="value")
@@ -104,11 +105,15 @@ def main():
         elif key == "us_building_permits": permit_series = s
         elif key == "us_epu": epu_series = s
         elif key == "us_breakeven_10y": breakeven_series = s
+        elif key == "us_labor_productivity": prod_series = s
+        elif key == "us_defense_gdp": defense_series = s
+        elif key == "us_private_investment": invest_series = s
         else: macro_indicators[key] = s
 
     raw_factors = _compute_all_factors(
         asset_prices, macro_indicators, yield_short, yield_long,
         risk_series, m2_series, permit_series, epu_series, breakeven_series,
+        prod_series, defense_series, invest_series,
     )
     factor_df = pd.DataFrame(raw_factors).sort_index().dropna(how="all")
 

@@ -35,6 +35,7 @@ FACTOR_GROUPS: Dict[str, List[str]] = {
     "policy":       ["policy_uncertainty"],
     "inflation":    ["inflation_expectations"],
     "cross_market": ["cross_market_sync"],
+    "structural":   ["productivity_trend", "defense_burden", "investment_cycle"],
 }
 
 STABLE_FACTORS = [
@@ -82,8 +83,16 @@ FACTOR_LITERATURE: Dict[str, str] = {
     "inflation_expectations": "Faust & Wright (2013) — Forecasting inflation. "
                               "Breakeven inflation as market-implied expectations.",
     "cross_market_sync": "Longin & Solnik (2001) — Extreme correlation of international equity markets. "
-                         "Cross-market synchronization as global risk appetite signal. "
-                         "Higher sync = risk-on, diverging markets = risk-off.",
+                         "Cross-market synchronization as global risk appetite signal.",
+    "productivity_trend": "Solow (1957) — Technical change and the aggregate production function. "
+                          "Gordon (2016) — The rise and fall of American growth. "
+                          "Labor productivity growth as structural economic driver.",
+    "defense_burden": "Ramey (2011) — Identifying government spending shocks. "
+                      "High defense/GDP → unified national purpose → lower policy uncertainty. "
+                      "Declining defense burden since 1950s correlates with rising EPU (r=-0.62).",
+    "investment_cycle": "Keynes (1936) — The General Theory. "
+                        "Private investment as the 'animal spirits' cycle. "
+                        "Investment growth leads productivity and employment.",
 }
 
 
@@ -329,6 +338,44 @@ def cross_market_sync(
     return np.tanh(sync * 3).clip(-1, 1)
 
 
+def productivity_trend(prod_series: pd.Series, lookback: int = 10) -> pd.Series:
+    """Labor productivity growth trend (Solow 1957; Gordon 2016).
+
+    Year-over-year productivity growth rate, z-scored over long history.
+    Positive = productivity acceleration = structural bull case.
+    """
+    if prod_series is None or len(prod_series) < lookback:
+        return pd.Series(dtype=float)
+    growth = prod_series.pct_change(4, fill_method=None) * 100.0
+    return zscore(growth, lookback * 4)
+
+
+def defense_burden(defense_gdp_series: pd.Series, lookback: int = 40) -> pd.Series:
+    """Defense burden factor (Ramey 2011).
+
+    Defense/GDP ratio, z-scored.  High defense spending historically
+    correlates with LOW policy uncertainty (r=-0.62) — unified national
+    purpose reduces domestic policy noise.
+
+    Signal: higher defense burden → lower EPU → more predictable policy.
+    """
+    if defense_gdp_series is None or len(defense_gdp_series) < lookback:
+        return pd.Series(dtype=float)
+    return -zscore(defense_gdp_series, lookback)
+
+
+def investment_cycle(invest_series: pd.Series, lookback: int = 10) -> pd.Series:
+    """Private investment cycle (Keynes 1936).
+
+    Year-over-year real private investment growth, z-scored.
+    Investment leads the business cycle — rising investment = expansion ahead.
+    """
+    if invest_series is None or len(invest_series) < lookback:
+        return pd.Series(dtype=float)
+    growth = invest_series.pct_change(4, fill_method=None) * 100.0
+    return zscore(growth, lookback * 4)
+
+
 def _compute_all_factors(
     asset_prices: Dict[str, pd.Series],
     macro_indicators: Dict[str, pd.Series],
@@ -339,6 +386,9 @@ def _compute_all_factors(
     permit_series: Optional[pd.Series] = None,
     epu_series: Optional[pd.Series] = None,
     breakeven_series: Optional[pd.Series] = None,
+    prod_series: Optional[pd.Series] = None,
+    defense_series: Optional[pd.Series] = None,
+    invest_series: Optional[pd.Series] = None,
 ) -> Dict[str, pd.Series]:
     factors: Dict[str, pd.Series] = {}
 
@@ -386,6 +436,15 @@ def _compute_all_factors(
     if len(asset_prices) >= 3:
         asset_rets = {k: px.pct_change(fill_method=None) for k, px in asset_prices.items() if px is not None and not px.empty}
         factors["cross_market_sync"] = cross_market_sync(asset_rets)
+
+    if prod_series is not None and not prod_series.empty:
+        factors["productivity_trend"] = productivity_trend(prod_series)
+
+    if defense_series is not None and not defense_series.empty:
+        factors["defense_burden"] = defense_burden(defense_series)
+
+    if invest_series is not None and not invest_series.empty:
+        factors["investment_cycle"] = investment_cycle(invest_series)
 
     return factors
 

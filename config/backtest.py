@@ -25,6 +25,9 @@ MACRO_SPECS: Dict[str, str] = {
     "us_building_permits": "level",
     "us_breakeven_10y": "level",
     "us_epu": "level",
+    "us_labor_productivity": "level",
+    "us_defense_gdp": "level",
+    "us_private_investment": "level",
     "china_cpi": "level",
     "hang_seng": "level",
 }
