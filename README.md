@@ -43,14 +43,17 @@ global-economy-lab/
 │   └── 03_event_replay.ipynb
 ├── src/
 │   ├── data_fetcher/        # 数据获取层（含 backends/ 免费后端）
-│   ├── analysis/            # 分析层
+│   ├── analysis/            # 分析层（含 data_quality / research_panel / regime_labels）
+│   ├── backtest/            # 月度回测引擎、指标、参考策略
 │   └── visualization/       # 可视化层
 ├── tests/
 │   ├── test_backends.py
-│   └── test_data_fetcher.py
+│   ├── test_data_fetcher.py
+│   └── test_phase1.py       # 数据质量 / 面板 / 周期 / 回测 端到端单测
 └── scripts/
     ├── bootstrap_history.py
     ├── update_data.py
+    ├── run_phase1_backtest.py
     └── run_dashboard.py
 ```
 
@@ -166,6 +169,40 @@ make dashboard
 1. 在 `src/analysis/` 中新建 Python 文件。
 2. 函数接收 `pd.DataFrame` 输入，返回分析结果 DataFrame 或 dict。
 3. 在对应 Notebook 中调用验证逻辑正确性。
+
+### 运行第一阶段闭环
+
+第一阶段的"数据校验 → 月度面板 → 周期标签 → 回测 → 报告"链路由 `scripts/run_phase1_backtest.py` 串起：
+
+```bash
+# 1. 先回灌历史数据（可选，若缓存已存在可跳过）
+python scripts/bootstrap_history.py --start-date 2008-01-01
+
+# 2. 运行第一阶段闭环（输出落到 data/_meta/phase1/）
+python scripts/run_phase1_backtest.py --start-date 2008-01-01 --cost-bps 10
+```
+
+产物：
+
+| 文件 | 说明 |
+|---|---|
+| `data_quality.csv` | 每个数据源的覆盖区间、缺失率、重复日期、异常跳变 |
+| `monthly_panel.csv` | 月末对齐的研究宽表（资产 `_ret` 列 + 宏观信号列） |
+| `regime_labels.csv` | 4 状态周期标签（复苏 / 过热 / 滞胀 / 衰退） |
+| `backtest_metrics.csv` | 等权、SP500 买入持有、周期规则三组合的指标 |
+| `equity_curves.csv` | 各组合月度净值曲线 |
+| `phase1_summary.json` | 一站式汇总（执行参数、质量摘要、指标） |
+
+新模块 API：
+
+| 模块 | 主要入口 |
+|---|---|
+| `src.analysis.data_quality` | `check_panel(panels)` / `summarize_report(report)` |
+| `src.analysis.research_panel` | `build_monthly_panel(assets, macros)` / `apply_signal_lag(panel, lag=1)` |
+| `src.analysis.regime_labels` | `label_regimes(panel)` / `regime_target_weights(panel)` |
+| `src.backtest` | `MonthlyBacktest(returns, cost_bps).run(weights)` / `summary_metrics(returns, weights)` |
+
+阶段目标、TODO 与改进建议见 [`docs/phase1_execution_plan.md`](docs/phase1_execution_plan.md)。
 
 ---
 
