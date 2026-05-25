@@ -37,6 +37,25 @@ FACTOR_GROUPS: Dict[str, List[str]] = {
     "cross_market": ["cross_market_sync"],
 }
 
+STABLE_FACTORS = [
+    "trend_momentum",
+    "mean_reversion",
+    "volatility_regime",
+    "cross_asset_momentum",
+    "carry_yield_curve",
+    "inflation_expectations",
+]
+
+UNSTABLE_FACTORS = [
+    "credit_risk",
+    "policy_uncertainty",
+    "macro_diffusion",
+    "global_composite",
+    "liquidity_growth",
+    "leading_indicator",
+    "cross_market_sync",
+]
+
 FACTOR_LITERATURE: Dict[str, str] = {
     "trend_momentum": "Jegadeesh & Titman (1993) — Returns to buying winners and selling losers. "
                       "Multi-timeframe extension per Moskowitz, Ooi & Pedersen (2012).",
@@ -383,5 +402,8 @@ __all__ = [
     "cross_asset_momentum",
     "global_composite_trend",
     "credit_risk",
+    "cross_market_sync",
     "_compute_all_factors",
+    "STABLE_FACTORS",
+    "UNSTABLE_FACTORS",
 ]

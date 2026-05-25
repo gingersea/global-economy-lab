@@ -549,12 +549,16 @@ class UnifiedPredictor:
         self,
         observations: np.ndarray,
         epu_percentile: float = 50.0,
+        cross_market_agreement: float = 1.0,
     ) -> UnifiedPrediction:
         """Generate unified prediction from latest state.
 
         Args:
-            observations:    Full factor signal history (T x d_obs).
-            epu_percentile:  Current EPU percentile for gating.
+            observations:         Full factor signal history (T x d_obs).
+            epu_percentile:       Current EPU percentile for gating.
+            cross_market_agreement: Fraction of global markets agreeing on
+                                  direction (0.5-1.0).  Higher = stronger
+                                  cross-validation → higher confidence.
 
         Returns:
             :class:`UnifiedPrediction` with signal {-1,0,+1} + magnitude.
@@ -589,6 +593,8 @@ class UnifiedPredictor:
         else:
             signal = 0
             magnitude = abs(mag_factor) * 0.05
+
+        conf *= (0.7 + 0.3 * cross_market_agreement)
 
         loadings = self.dfm.get_loadings() if self.dfm is not None else None
 

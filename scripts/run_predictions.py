@@ -111,8 +111,14 @@ def main():
         risk_series, m2_series, permit_series, epu_series, breakeven_series,
     )
     factor_df = pd.DataFrame(raw_factors).sort_index().dropna(how="all")
+
+    # Use only stable factors for prediction
+    from src.analysis.factors import STABLE_FACTORS
+    stable_cols = [c for c in STABLE_FACTORS if c in factor_df.columns]
+    factor_df = factor_df[stable_cols]
     obs_array = factor_df.values.astype(np.float64)
-    logger.info(f"Computed {len(factor_df.columns)} factor signals ({len(obs_array)} obs).")
+    logger.info(f"Using {len(stable_cols)} stable factors: {stable_cols}")
+    logger.info(f"  Observations: {len(obs_array)}")
 
     epu_pct = 50.0
     if epu_series is not None and not epu_series.empty:
@@ -120,8 +126,22 @@ def main():
         epu_pct = float((epu_annual.values < epu_annual.iloc[-1]).mean() * 100)
     logger.info(f"EPU percentile: {epu_pct:.1f}%")
 
+    # Cross-market agreement: fraction of markets with positive annual return
+    cross_agree = 0.5
+    if len(asset_prices) >= 3:
+        directions = []
+        for px in asset_prices.values():
+            if px is None or px.empty: continue
+            ret = px.resample("YE").apply(lambda x: (1+x).prod()-1)
+            if len(ret) > 0 and ret.iloc[-1] is not None:
+                directions.append(1 if ret.iloc[-1] > 0 else -1)
+        if directions:
+            pos_count = sum(1 for d in directions if d > 0)
+            cross_agree = max(pos_count, len(directions) - pos_count) / len(directions)
+    logger.info(f"Cross-market agreement: {cross_agree:.0%} ({len(asset_prices)} markets)")
+
     predictor = UnifiedPredictor()
-    prediction = predictor.predict(obs_array, epu_percentile=epu_pct)
+    prediction = predictor.predict(obs_array, epu_percentile=epu_pct, cross_market_agreement=cross_agree)
 
     fwd_pred = prediction.forward_pred
     fwd_mean = fwd_pred.state_mean[0, 0] if fwd_pred is not None else 0
@@ -137,6 +157,7 @@ def main():
     logger.info(f"  Magnitude:    {prediction.magnitude:+.1%} (fuzzy)")
     logger.info(f"  Confidence:   {prediction.confidence:.1%}")
     logger.info(f"  EPU gate:     {'⚠️ NOISY — signal suppressed' if epu_pct > 75 else '✓ CLEAR — signal active'}")
+    logger.info(f"  Cross-market: {cross_agree:.0%} agreement ({len(asset_prices)} global markets)")
     logger.info(f"  {'─' * 40}")
     logger.info(f"  Latent factors:")
     logger.info(f"    Direction:  {prediction.direction_factor:+.4f}")
