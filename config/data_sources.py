@@ -163,6 +163,58 @@ US_NFCI = DataSourceConfig(
     publication_lag_days=7,
 )
 
+US_M2 = DataSourceConfig(
+    name="us_m2",
+    description="US M2 Money Supply, FRED M2SL (liquidity factor)",
+    update_frequency="weekly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "M2SL"},
+    category="macro",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=7,
+)
+
+US_PERMIT = DataSourceConfig(
+    name="us_building_permits",
+    description="US Building Permits, FRED PERMIT (leading indicator)",
+    update_frequency="monthly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "PERMIT"},
+    category="macro",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=30,
+)
+
+US_BREAKEVEN_10Y = DataSourceConfig(
+    name="us_breakeven_10y",
+    description="10-Year Breakeven Inflation Rate, FRED T10YIE",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "T10YIE"},
+    category="macro",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=0,
+)
+
+US_EPU = DataSourceConfig(
+    name="us_epu",
+    description="US Economic Policy Uncertainty Index, FRED USEPUINDXD",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "USEPUINDXD"},
+    category="sentiment",
+    region="US",
+    backends=["fred_csv"],
+    publication_lag_days=0,
+)
+
 CHINA_CPI = DataSourceConfig(
     name="china_cpi",
     description="China CPI YoY (%) via akshare",
@@ -387,6 +439,10 @@ ALL_SOURCES: Dict[str, DataSourceConfig] = {
     "china_cpi": CHINA_CPI,
     "world_gdp_usd": WORLD_GDP_USD,
     "ea_hicp": EA_HICP,
+    "us_m2": US_M2,
+    "us_building_permits": US_PERMIT,
+    "us_breakeven_10y": US_BREAKEVEN_10Y,
+    "us_epu": US_EPU,
     # Equities
     "sp500": SP500,
     "csi300": CSI300,

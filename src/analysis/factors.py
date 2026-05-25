@@ -30,6 +30,10 @@ FACTOR_GROUPS: Dict[str, List[str]] = {
     "carry":        ["carry_yield_curve"],
     "macro":        ["macro_diffusion", "global_composite"],
     "risk":         ["credit_risk"],
+    "liquidity":    ["liquidity_growth"],
+    "leading":      ["leading_indicator"],
+    "policy":       ["policy_uncertainty"],
+    "inflation":    ["inflation_expectations"],
 }
 
 FACTOR_LITERATURE: Dict[str, str] = {
@@ -49,6 +53,14 @@ FACTOR_LITERATURE: Dict[str, str] = {
                         "Multi-region composite trend from macro indicators.",
     "credit_risk": "Gilchrist & Zakrajsek (2012) — Credit spreads and business cycle fluctuations. "
                    "NFCI: Adrian, Crump & Moench (2015) — Financial conditions indexes.",
+    "liquidity_growth": "Friedman & Schwartz (1963) — A monetary history. "
+                        "M2 growth as liquidity signal per Jensen, Johnson & Mercer (1996).",
+    "leading_indicator": "Stock & Watson (1989) — New indexes of coincident and leading economic indicators. "
+                         "Building permits as housing leading indicator per Leamer (2007).",
+    "policy_uncertainty": "Baker, Bloom & Davis (2016) — Measuring economic policy uncertainty. "
+                          "EPU index as political/regulatory risk factor.",
+    "inflation_expectations": "Faust & Wright (2013) — Forecasting inflation. "
+                              "Breakeven inflation as market-implied expectations.",
 }
 
 
@@ -218,12 +230,60 @@ def credit_risk(risk_series: pd.Series, lookback: int = 252) -> pd.Series:
     return -z.clip(-1, 1)
 
 
+def liquidity_growth(m2_series: pd.Series, lookback: int = 12) -> pd.Series:
+    """Liquidity factor from M2 money supply growth (Friedman & Schwartz 1963).
+
+    Year-over-year M2 growth rate, z-scored.  Higher = more liquidity = risk-on.
+    """
+    if m2_series is None or len(m2_series) < lookback:
+        return pd.Series(dtype=float)
+    yoy = m2_series.pct_change(lookback, fill_method=None) * 100.0
+    return zscore(yoy, lookback * 10)
+
+
+def leading_indicator(permit_series: pd.Series, lookback: int = 12) -> pd.Series:
+    """Housing leading indicator from building permits (Leamer 2007).
+
+    YoY change in building permits, z-scored.  Higher = expanding construction = growth ahead.
+    """
+    if permit_series is None or len(permit_series) < lookback:
+        return pd.Series(dtype=float)
+    yoy = permit_series.pct_change(lookback, fill_method=None) * 100.0
+    return zscore(yoy, lookback * 10)
+
+
+def policy_uncertainty(epu_series: pd.Series, lookback: int = 252) -> pd.Series:
+    """Economic Policy Uncertainty (Baker, Bloom & Davis 2016).
+
+    Higher EPU → more uncertainty → negative signal (risk-off).
+    """
+    if epu_series is None or epu_series.empty:
+        return pd.Series(dtype=float)
+    z = zscore(epu_series, lookback)
+    return -z.clip(-1, 1)
+
+
+def inflation_expectations(breakeven_series: pd.Series, lookback: int = 60) -> pd.Series:
+    """Market-implied inflation expectations (Faust & Wright 2013).
+
+    10Y breakeven rate: rising → inflation fears, falling → disinflation.
+    Centered so 2-2.5% is neutral (z-scored).
+    """
+    if breakeven_series is None or len(breakeven_series) < lookback:
+        return pd.Series(dtype=float)
+    return zscore(breakeven_series, lookback)
+
+
 def _compute_all_factors(
     asset_prices: Dict[str, pd.Series],
     macro_indicators: Dict[str, pd.Series],
     yield_short: Optional[pd.Series] = None,
     yield_long: Optional[pd.Series] = None,
     risk_series: Optional[pd.Series] = None,
+    m2_series: Optional[pd.Series] = None,
+    permit_series: Optional[pd.Series] = None,
+    epu_series: Optional[pd.Series] = None,
+    breakeven_series: Optional[pd.Series] = None,
 ) -> Dict[str, pd.Series]:
     factors: Dict[str, pd.Series] = {}
 
@@ -255,6 +315,18 @@ def _compute_all_factors(
 
     if risk_series is not None and not risk_series.empty:
         factors["credit_risk"] = credit_risk(risk_series)
+
+    if m2_series is not None and not m2_series.empty:
+        factors["liquidity_growth"] = liquidity_growth(m2_series)
+
+    if permit_series is not None and not permit_series.empty:
+        factors["leading_indicator"] = leading_indicator(permit_series)
+
+    if epu_series is not None and not epu_series.empty:
+        factors["policy_uncertainty"] = policy_uncertainty(epu_series)
+
+    if breakeven_series is not None and not breakeven_series.empty:
+        factors["inflation_expectations"] = inflation_expectations(breakeven_series)
 
     return factors
 

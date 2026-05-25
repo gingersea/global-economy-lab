@@ -21,6 +21,10 @@ MACRO_SPECS: Dict[str, str] = {
     "us_treasury_10y": "level",
     "us_nfci": "level",
     "us_industrial_production": "yoy",
+    "us_m2": "level",
+    "us_building_permits": "level",
+    "us_breakeven_10y": "level",
+    "us_epu": "level",
 }
 
 DEFAULT_REGIME_WEIGHTS: Dict[str, Dict[str, float]] = {

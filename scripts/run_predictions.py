@@ -27,6 +27,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from config.backtest import ASSET_KEYS, MACRO_SPECS
 from config.data_sources import ALL_SOURCES, DataSourceConfig
 from src.analysis.prediction_hub import PredictionHub
+from src.analysis.reliability import ReliabilityFilter
 
 
 def parse_args():
@@ -135,7 +136,25 @@ def main():
     dp = result.daily_prediction
     logger.info(f"\n{'='*64}")
     logger.info("Prediction Results (Kalman Filter / DFM)")
-    logger.info(f"  Confidence = 1/(1+sqrt(P_diag)) from KF state covariance")
+
+    # Reliability filter using EPU data
+    epu_df = _safe_fetch("us_epu", args.start_date, args.end_date)
+    epu_s = _series_from_df(epu_df, col="value")
+    rf = ReliabilityFilter()
+    rf.fit(
+        epu_s if not epu_s.empty else pd.Series([0]),
+        fwd_returns if fwd_returns is not None and not fwd_returns.empty else pd.Series([0]),
+        risk_series if risk_series is not None and not risk_series.empty else pd.Series([0]),
+    )
+    rel = rf.assess(
+        epu_value=float(epu_s.iloc[-1]) if not epu_s.empty else 0,
+        vol_value=float(fwd_returns.tail(60).std()) if fwd_returns is not None and not fwd_returns.empty else 0,
+    )
+    reliability_tag = "✓ 可靠" if rel.is_reliable else "⚠️ 不可靠"
+    logger.info(f"  Reliability: {reliability_tag} | noise={rel.noise_level} | driver={rel.primary_driver}")
+    logger.info(f"  Expected accuracy: {rf.expected_accuracy(rel):.0%} (empirical)")
+    logger.info(f"  EPU percentile: {rel.details.get('epu_percentile', '?')}%")
+    logger.info(f"  KF confidence: {dp.confidence:.2%}")
     logger.info(f"  {'─' * 40}")
     logger.info(f"  MONTHLY (integral of KF-filtered state):")
     logger.info(f"    Composite signal: {mp.composite_signal:+.4f}")
