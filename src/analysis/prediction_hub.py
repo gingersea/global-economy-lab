@@ -1,12 +1,12 @@
 """
-Prediction hub — bridges the macro monthly and daily short-term predictors.
+Prediction hub — unified factor-based prediction orchestrator.
 
-Orchestrates a two-step prediction pipeline:
-1. MacroRegimePredictor → predicted regime + probabilities (1–3mo ahead).
-2. DailyAssetPredictor → daily directional signals conditioned on the
-   predicted regime.
+Runs the factor ensemble once, produces:
+- Daily prediction (latest day signals)
+- Monthly prediction (integral of daily → regime mapping)
+- Factor decomposition and weight reports
 
-Outputs are written to ``data/_meta/predictions/``.
+The monthly prediction IS the daily integral — not a separate system.
 """
 
 from __future__ import annotations
@@ -20,193 +20,147 @@ from typing import Dict, Optional
 import pandas as pd
 from loguru import logger
 
+from src.analysis.factor_ensemble import FactorEnsemble, FactorEnsembleConfig
 from src.analysis.macro_predictor import (
     MacroPrediction,
-    MacroPredictorConfig,
     MacroRegimePredictor,
+    MacroPredictorConfig,
+    _signal_to_regime,
 )
-from src.analysis.daily_predictor import (
-    DailyAssetPredictor,
-    DailyPredictorConfig,
-    DailyPrediction,
-)
-from config.backtest import DEFAULT_REGIME_WEIGHTS
+from src.analysis.daily_predictor import DailyAssetPredictor, DailyPrediction
 
 
 @dataclass
 class HubPredictionResult:
-    """Aggregated prediction result from the hub.
+    """Aggregated prediction result.
 
     Attributes:
-        timestamp:           When the prediction was generated.
-        macro_prediction:    Full :class:`MacroPrediction`.
-        daily_prediction:    Full :class:`DailyPrediction`.
-        daily_series:        Optional full daily signal history DataFrame.
-        regime_signal_map:   How the predicted regime maps to asset weights.
-        summary:             Human-readable summary dict.
+        timestamp:           When generated.
+        daily_prediction:    Latest daily signals.
+        macro_prediction:    Monthly aggregate → regime.
+        ensemble_result:     Full factor ensemble output.
+        summary:             Human-readable summary.
     """
 
     timestamp: str
-    macro_prediction: Optional[MacroPrediction] = None
     daily_prediction: Optional[DailyPrediction] = None
-    daily_series: Optional[pd.DataFrame] = None
-    regime_signal_map: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    macro_prediction: Optional[MacroPrediction] = None
+    ensemble_result: Optional = None
     summary: Dict = field(default_factory=dict)
 
 
 class PredictionHub:
-    """Two-level prediction orchestrator.
+    """Unified factor-based prediction orchestrator.
+
+    Runs the ensemble once → extracts daily + monthly predictions.
+    Monthly = integral(daily) — the key architectural principle.
 
     Args:
-        macro_config:  Config for the macro predictor.
-        daily_config:  Config for the daily predictor.
-        output_dir:    Where to write prediction artefacts.
+        ensemble_config: Factor ensemble configuration.
+        macro_config:    Macro predictor config.
+        output_dir:      Where to write artefacts.
     """
 
     def __init__(
         self,
+        ensemble_config: Optional[FactorEnsembleConfig] = None,
         macro_config: Optional[MacroPredictorConfig] = None,
-        daily_config: Optional[DailyPredictorConfig] = None,
         output_dir: str = "data/_meta/predictions",
     ):
-        self.macro_predictor = MacroRegimePredictor(macro_config)
-        self.daily_predictor = DailyAssetPredictor(daily_config)
+        self.ensemble_config = ensemble_config or FactorEnsembleConfig()
+        self.macro_config = macro_config or MacroPredictorConfig(
+            ensemble_config=self.ensemble_config,
+        )
+        self.ensemble = FactorEnsemble(self.ensemble_config)
+        self.macro_predictor = MacroRegimePredictor(self.macro_config)
+        self.daily_predictor = DailyAssetPredictor(self.ensemble_config)
         self.output_dir = Path(output_dir)
 
     def run(
         self,
-        panel: pd.DataFrame,
-        asset_dfs: Dict[str, pd.DataFrame],
-        regime_col: str = "regime",
-        price_col: str = "close",
+        asset_prices: Dict[str, pd.Series],
+        macro_indicators: Optional[Dict[str, pd.Series]] = None,
+        yield_short: Optional[pd.Series] = None,
+        yield_long: Optional[pd.Series] = None,
+        risk_series: Optional[pd.Series] = None,
     ) -> HubPredictionResult:
-        """Execute the full two-level prediction pipeline.
+        """Execute the unified prediction pipeline.
 
         Args:
-            panel:      Monthly panel with regime labels.
-            asset_dfs:  Dict ``{asset_key: daily_df}``.
-            regime_col: Name of the regime label column in panel.
-            price_col:  Price column in asset DataFrames.
+            asset_prices:     Daily price series per asset.
+            macro_indicators: Macro indicator series (any frequency).
+            yield_short:      2Y yield.
+            yield_long:       10Y yield.
+            risk_series:      VIX / NFCI.
 
         Returns:
-            :class:`HubPredictionResult` with macro and daily predictions.
+            :class:`HubPredictionResult`.
         """
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        macro_pred = self.macro_predictor.predict(panel, regime_col=regime_col)
-        predicted_regime = macro_pred.predicted_regimes.get(1, "unknown")
-        logger.info(
-            f"PredictionHub: macro → {predicted_regime} "
-            f"(confidence={macro_pred.confidence.get(1, 0):.2%})"
+        daily_pred = self.daily_predictor.predict(
+            asset_prices, macro_indicators, yield_short, yield_long, risk_series
         )
 
-        daily_pred = self.daily_predictor.predict(asset_dfs, predicted_regime, price_col=price_col)
-        logger.info(f"PredictionHub: daily signals for {len(daily_pred.signals)} assets.")
-
-        regime_series = pd.Series(predicted_regime, index=asset_dfs[next(iter(asset_dfs))].index[-1:])
-
-        daily_series = None
-        try:
-            full_regime = pd.Series(predicted_regime, index=pd.DatetimeIndex(
-                [asset_dfs[k].index[-1] for k in asset_dfs if asset_dfs[k] is not None]
-            ))
-            daily_series = self.daily_predictor.predict_series(
-                asset_dfs, full_regime, price_col=price_col
-            )
-        except Exception:
-            logger.warning("PredictionHub: daily series generation skipped.")
-
-        regime_signal_map = self._build_regime_signal_map(macro_pred)
-        summary = self._build_summary(macro_pred, daily_pred, regime_signal_map)
-
-        self._write_outputs(macro_pred, daily_pred, daily_series, summary)
-
-        return HubPredictionResult(
-            timestamp=str(date.today()),
-            macro_prediction=macro_pred,
-            daily_prediction=daily_pred,
-            daily_series=daily_series,
-            regime_signal_map=regime_signal_map,
-            summary=summary,
+        macro_pred = self.macro_predictor.predict(
+            asset_prices, macro_indicators, yield_short, yield_long, risk_series
         )
 
-    def rolling_backtest(
-        self,
-        panel: pd.DataFrame,
-        asset_dfs: Dict[str, pd.DataFrame],
-        regime_col: str = "regime",
-    ) -> pd.DataFrame:
-        """Rolling out-of-sample evaluation of the macro predictor.
+        ensemble_result = self.ensemble.run(
+            asset_prices, macro_indicators, yield_short, yield_long, risk_series
+        )
 
-        Returns:
-            DataFrame from :meth:`MacroRegimePredictor.predict_rolling`.
-        """
-        return self.macro_predictor.predict_rolling(panel, regime_col=regime_col)
+        self._write_outputs(ensemble_result, daily_pred, macro_pred)
 
-    def _build_regime_signal_map(self, macro_pred: MacroPrediction) -> Dict[str, Dict[str, float]]:
-        regime = macro_pred.predicted_regimes.get(1, "unknown")
-        return {
-            "predicted_regime": regime,
-            "confidence": macro_pred.confidence.get(1, 0.0),
-            "regime_weights": DEFAULT_REGIME_WEIGHTS.get(regime, DEFAULT_REGIME_WEIGHTS["unknown"]),
-            "probabilities": {
-                r: round(float(macro_pred.probabilities.loc[1, r]), 4)
-                for r in ["recovery", "overheat", "stagflation", "recession"]
-                if r in macro_pred.probabilities.columns
+        summary = {
+            "timestamp": str(date.today()),
+            "daily": {
+                "composite_signal": daily_pred.composite_signal,
+                "confidence": daily_pred.confidence,
+                "asset_signals": daily_pred.asset_signals,
+                "factor_weights": daily_pred.factor_weights,
+            },
+            "monthly": {
+                "composite_signal": macro_pred.composite_signal,
+                "confidence": macro_pred.confidence,
+                "predicted_regime": macro_pred.predicted_regime,
+                "regime_probabilities": macro_pred.regime_probabilities,
+                "factor_contributions": macro_pred.factor_contributions,
             },
         }
-
-    def _build_summary(
-        self,
-        macro_pred: MacroPrediction,
-        daily_pred: DailyPrediction,
-        regime_signal_map: Dict,
-    ) -> Dict:
-        return {
-            "timestamp": str(date.today()),
-            "reference_date": str(macro_pred.timestamp.date()),
-            "current_regime": macro_pred.current_regime,
-            "predicted_regime_1m": macro_pred.predicted_regimes.get(1),
-            "predicted_regime_2m": macro_pred.predicted_regimes.get(2),
-            "predicted_regime_3m": macro_pred.predicted_regimes.get(3),
-            "confidence_1m": macro_pred.confidence.get(1),
-            "confidence_2m": macro_pred.confidence.get(2, 0),
-            "confidence_3m": macro_pred.confidence.get(3, 0),
-            "daily_signals": daily_pred.signals,
-            "daily_confidence": daily_pred.confidence,
-            "indicators": macro_pred.indicators,
-            "regime_signal_map": regime_signal_map,
-        }
-
-    def _write_outputs(
-        self,
-        macro_pred: MacroPrediction,
-        daily_pred: DailyPrediction,
-        daily_series: Optional[pd.DataFrame],
-        summary: Dict,
-    ) -> None:
-        if macro_pred.probabilities is not None and not macro_pred.probabilities.empty:
-            macro_pred.probabilities.to_csv(self.output_dir / "macro_probabilities.csv")
-
-        if macro_pred.transition_matrix is not None and not macro_pred.transition_matrix.empty:
-            macro_pred.transition_matrix.to_csv(self.output_dir / "transition_matrix.csv")
-
-        signals_df = pd.DataFrame([{
-            "asset": k,
-            "signal": v,
-            "confidence": daily_pred.confidence.get(k, 0.0),
-            "predicted_regime": daily_pred.predicted_regime,
-        } for k, v in daily_pred.signals.items()])
-        if not signals_df.empty:
-            signals_df.to_csv(self.output_dir / "daily_signals.csv", index=False)
-
-        if daily_series is not None and not daily_series.empty:
-            daily_series.to_csv(self.output_dir / "daily_signal_series.csv")
 
         (self.output_dir / "prediction_summary.json").write_text(
             json.dumps(summary, indent=2, default=str)
         )
         logger.success(f"PredictionHub: artefacts written to {self.output_dir}")
+
+        return HubPredictionResult(
+            timestamp=str(date.today()),
+            daily_prediction=daily_pred,
+            macro_prediction=macro_pred,
+            ensemble_result=ensemble_result,
+            summary=summary,
+        )
+
+    def _write_outputs(self, ensemble_result, daily_pred, macro_pred):
+        if not ensemble_result.factor_signals.empty:
+            ensemble_result.factor_signals.to_csv(self.output_dir / "factor_signals_daily.csv")
+        if ensemble_result.monthly_aggregate is not None and not ensemble_result.monthly_aggregate.empty:
+            monthly_df = ensemble_result.monthly_aggregate.to_frame("monthly_composite")
+            if ensemble_result.monthly_confidence is not None:
+                monthly_df["confidence"] = ensemble_result.monthly_confidence
+            monthly_df.to_csv(self.output_dir / "monthly_aggregate.csv")
+
+        macro_probs = pd.DataFrame([macro_pred.regime_probabilities])
+        macro_probs.index = [str(macro_pred.timestamp.date())]
+        macro_probs.to_csv(self.output_dir / "regime_probabilities.csv")
+
+        daily_sigs = pd.DataFrame([{
+            "asset": k, "signal": v,
+            "date": str(daily_pred.date.date()),
+        } for k, v in daily_pred.asset_signals.items()])
+        if not daily_sigs.empty:
+            daily_sigs.to_csv(self.output_dir / "daily_signals.csv", index=False)
 
 
 __all__ = [

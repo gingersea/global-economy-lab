@@ -1,11 +1,12 @@
 """
-Two-dimension prediction driver.
+Unified multi-factor prediction driver.
 
-Runs the macro → daily prediction pipeline and outputs reports.
+Runs the factor ensemble once → generates daily + monthly predictions.
+Monthly = integral of daily factor signals — inheriting higher accuracy.
 
 Usage:
     python scripts/run_predictions.py --start-date 2008-01-01
-    python scripts/run_predictions.py --start-date 2008-01-01 --rolling-eval
+    python scripts/run_predictions.py --start-date 2000-01-01  # extended history
 """
 
 from __future__ import annotations
@@ -23,10 +24,8 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from config.backtest import ASSET_KEYS, MACRO_SPECS, GROWTH_FALLBACK_COL, GROWTH_FALLBACK_THRESHOLD
+from config.backtest import ASSET_KEYS, MACRO_SPECS
 from config.data_sources import ALL_SOURCES, DataSourceConfig
-from src.analysis import regime_labels as rl
-from src.analysis import research_panel as rp
 from src.analysis.prediction_hub import PredictionHub
 
 
@@ -35,7 +34,6 @@ def parse_args():
     parser.add_argument("--start-date", default="2008-01-01")
     parser.add_argument("--end-date", default="2026-05-25")
     parser.add_argument("--output-dir", default="data/_meta/predictions")
-    parser.add_argument("--rolling-eval", action="store_true", help="Run rolling out-of-sample macro evaluation.")
     return parser.parse_args()
 
 
@@ -57,72 +55,93 @@ def _safe_fetch(key: str, start: str, end: str) -> Optional[pd.DataFrame]:
         return None
 
 
-def load_data(start: str, end: str):
-    logger.info("Loading asset series …")
-    assets = {k: df for k in ASSET_KEYS if (df := _safe_fetch(k, start, end)) is not None}
-    logger.info(f"  → {len(assets)}/{len(ASSET_KEYS)} assets available.")
-
-    logger.info("Loading macro series …")
-    macros = {k: (df, MACRO_SPECS[k]) for k in MACRO_SPECS
-              if (df := _safe_fetch(k, start, end)) is not None}
-    logger.info(f"  → {len(macros)}/{len(MACRO_SPECS)} macros available.")
-
-    panel = rp.build_monthly_panel(assets=assets, macros=macros)
-    lagged = rp.apply_signal_lag(panel, lag=1)
-
-    growth_col = "us_pmi" if "us_pmi" in lagged.columns else GROWTH_FALLBACK_COL
-    growth_threshold = 50.0 if growth_col == "us_pmi" else GROWTH_FALLBACK_THRESHOLD
-    if growth_col in lagged.columns and "us_cpi_yoy" in lagged.columns:
-        cfg = rl.RegimeConfig(growth_col=growth_col, growth_threshold=growth_threshold)
-        labelled = rl.label_regimes(lagged, config=cfg)
-        panel["regime"] = labelled["regime"]
-        panel["regime_label"] = labelled["regime_label"]
+def _series_from_df(df: pd.DataFrame, col: str = "close") -> pd.Series:
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    if isinstance(df.index, pd.DatetimeIndex):
+        idx = df.index
+    elif "date" in df.columns:
+        idx = pd.to_datetime(df["date"])
     else:
-        logger.warning("Cannot label regimes — missing growth/CPI columns.")
-
-    return panel, assets
+        idx = pd.to_datetime(df.index)
+    if col in df.columns:
+        vals = df[col]
+    else:
+        numeric_cols = df.select_dtypes(include="number").columns
+        vals = df[numeric_cols[0]] if len(numeric_cols) > 0 else pd.Series(dtype=float)
+    return pd.Series(vals.values, index=idx, dtype=float).sort_index().dropna()
 
 
 def main():
     args = parse_args()
     logger.info("=" * 64)
-    logger.info("Two-Dimension Prediction Driver")
+    logger.info("Unified Multi-Factor Prediction Driver")
     logger.info(f"  Period: {args.start_date} → {args.end_date}")
+    logger.info(f"  Assets: {ASSET_KEYS}")
+    logger.info(f"  Principle: monthly = integral(daily factor signals)")
     logger.info("=" * 64)
 
-    panel, asset_dfs = load_data(args.start_date, args.end_date)
-    if panel.empty or "regime" not in panel.columns:
-        logger.error("Panel has no regime labels. Cannot predict.")
-        return 1
+    asset_prices: Dict[str, pd.Series] = {}
+    for key in ASSET_KEYS:
+        df = _safe_fetch(key, args.start_date, args.end_date)
+        px = _series_from_df(df)
+        if not px.empty:
+            asset_prices[key] = px
+    logger.info(f"Loaded {len(asset_prices)}/{len(ASSET_KEYS)} asset price series.")
 
-    hub = PredictionHub(output_dir=args.output_dir)
+    macro_indicators: Dict[str, pd.Series] = {}
+    yield_short = None
+    yield_long = None
+    risk_series = None
 
-    if args.rolling_eval:
-        logger.info("Running rolling macro evaluation …")
-        rolling = hub.rolling_backtest(panel, asset_dfs)
-        if not rolling.empty:
-            rolling.to_csv(Path(args.output_dir) / "rolling_eval.csv")
-            acc = rolling["correct"].mean()
-            logger.info(f"Rolling accuracy: {acc:.2%} ({rolling['correct'].sum()}/{len(rolling)})")
+    for key, transform in MACRO_SPECS.items():
+        df = _safe_fetch(key, args.start_date, args.end_date)
+        s = _series_from_df(df, col="value")
+        if s.empty:
+            continue
+        if key == "us_treasury_2y":
+            yield_short = s
+        elif key == "us_treasury_10y":
+            yield_long = s
+        elif key in ("us_nfci",):
+            risk_series = s
+        else:
+            macro_indicators[key] = s
+    logger.info(f"Loaded {len(macro_indicators)} macro indicators.")
 
-    logger.info("Running prediction pipeline …")
-    result = hub.run(panel, asset_dfs)
+    hub = PredictionHub()
+    result = hub.run(
+        asset_prices=asset_prices,
+        macro_indicators=macro_indicators,
+        yield_short=yield_short,
+        yield_long=yield_long,
+        risk_series=risk_series,
+    )
 
+    mp = result.macro_prediction
+    dp = result.daily_prediction
     logger.info(f"\n{'='*64}")
-    logger.info("Prediction Summary")
-    logger.info(f"  Reference date : {result.summary['reference_date']}")
-    logger.info(f"  Current regime : {result.summary['current_regime']}")
-    logger.info(f"  Predicted 1mo  : {result.summary['predicted_regime_1m']} "
-                f"(conf={result.summary.get('confidence_1m', 0):.2%})")
-    logger.info(f"  Predicted 2mo  : {result.summary.get('predicted_regime_2m')} "
-                f"(conf={result.summary.get('confidence_2m', 0):.2%})")
-    logger.info(f"  Predicted 3mo  : {result.summary.get('predicted_regime_3m')} "
-                f"(conf={result.summary.get('confidence_3m', 0):.2%})")
-    logger.info("  Daily signals:")
-    for asset, sig in result.daily_prediction.signals.items():
-        direction = "▲" if sig > 0.05 else ("▼" if sig < -0.05 else "─")
-        logger.info(f"    {direction} {asset}: {sig:+.4f}")
-
+    logger.info("Prediction Results")
+    logger.info(f"  {'─' * 40}")
+    logger.info(f"  MONTHLY (integral of daily factors):")
+    logger.info(f"    Composite signal: {mp.composite_signal:+.4f}")
+    logger.info(f"    Confidence:       {mp.confidence:.2%}")
+    logger.info(f"    Predicted regime: {mp.predicted_regime}")
+    logger.info(f"    Regime probs:     {mp.regime_probabilities}")
+    logger.info(f"  {'─' * 40}")
+    logger.info(f"  DAILY (latest factor composite):")
+    logger.info(f"    Composite signal: {dp.composite_signal:+.4f}")
+    logger.info(f"    Confidence:       {dp.confidence:.2%}")
+    logger.info(f"  {'─' * 40}")
+    logger.info(f"  FACTOR WEIGHTS (adapted):")
+    for fname, w in sorted(dp.factor_weights.items(), key=lambda x: -x[1]):
+        contrib = mp.factor_contributions.get(fname, 0)
+        logger.info(f"    {fname:25s}  w={w:.3f}  contrib={contrib:+.4f}")
+    logger.info(f"  {'─' * 40}")
+    logger.info(f"  ASSET SIGNALS (daily):")
+    for asset, sig in sorted(dp.asset_signals.items(), key=lambda x: -abs(x[1])):
+        direction = "▲" if sig > 0.02 else ("▼" if sig < -0.02 else "─")
+        logger.info(f"    {direction} {asset:20s} {sig:+.4f}")
     return 0
 
 
