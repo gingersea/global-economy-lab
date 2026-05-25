@@ -481,10 +481,120 @@ class DynamicFactorModel:
         return pd.DataFrame(self.H, columns=[f"factor_{i}" for i in range(self.n_factors)])
 
     def get_confidence_history(self) -> Optional[pd.Series]:
-        """Return per-step state estimation confidence."""
         if self._last_result is None or self._last_result.confidence is None:
             return None
         return pd.Series(self._last_result.confidence, name="confidence")
+
+
+@dataclass
+class UnifiedPrediction:
+    """Unified prediction: direction + magnitude + confidence.
+
+    Attributes:
+        signal:          -1 (bearish), 0 (neutral), +1 (bullish).
+        magnitude:       Expected annual return (decimal, fuzzy).
+        confidence:      KF-derived confidence (0-1).
+        direction_factor: Latent factor 0 value (direction signal).
+        magnitude_factor: Latent factor 1 value (scale signal).
+        forward_pred:    KF forward prediction with CI.
+        factor_loadings: How each observed factor loads on latent factors.
+    """
+
+    signal: int
+    magnitude: float
+    confidence: float
+    direction_factor: float
+    magnitude_factor: float
+    forward_pred: Optional[ForwardPrediction] = None
+    factor_loadings: Optional[pd.DataFrame] = None
+
+
+class UnifiedPredictor:
+    """Comprehensive prediction via 2-factor Kalman DFM.
+
+    Factor 0 → direction (sign gives prediction).
+    Factor 1 → magnitude (scale of expected return).
+    Both extracted simultaneously from 12 observed factor signals.
+
+    The KF naturally provides confidence from state covariance.
+    No separate noise model needed — the KF's P matrix already
+    encodes uncertainty.
+
+    Args:
+        window_size: Rolling window for DFM re-estimation.
+        window_step: Re-estimation frequency.
+    """
+
+    def __init__(self, window_size: int = 1260, window_step: int = 252):
+        self.window_size = window_size
+        self.window_step = window_step
+        self.dfm: Optional[DynamicFactorModel] = None
+        self._state_history: Optional[pd.DataFrame] = None
+
+    def fit(self, observations: np.ndarray) -> KalmanResult:
+        """Fit 2-factor DFM on observed factor signals."""
+        self.dfm = DynamicFactorModel(
+            n_factors=2, window_size=self.window_size,
+            window_step=self.window_step, max_em_iter=20,
+        )
+        result = self.dfm.fit(observations)
+        self._state_history = pd.DataFrame(
+            result.filtered_state,
+            columns=["direction", "magnitude"],
+        )
+        return result
+
+    def predict(
+        self,
+        observations: np.ndarray,
+        epu_percentile: float = 50.0,
+    ) -> UnifiedPrediction:
+        """Generate unified prediction from latest state.
+
+        Args:
+            observations:    Full factor signal history (T x d_obs).
+            epu_percentile:  Current EPU percentile for gating.
+
+        Returns:
+            :class:`UnifiedPrediction` with signal {-1,0,+1} + magnitude.
+        """
+        result = self.fit(observations)
+        state = result.filtered_state
+
+        dir_factor = float(state[-1, 0])
+        mag_factor = float(state[-1, 1])
+        conf = float(result.confidence[-1]) if result.confidence is not None else 0.5
+
+        forward_pred = None
+        if self.dfm is not None:
+            forward_pred = self.dfm.predict(observations, steps=1)
+
+        dir_norm = np.tanh(dir_factor * 0.1)
+        if epu_percentile > 75:
+            signal = 0
+            magnitude = abs(mag_factor) * 0.05
+            conf *= 0.5
+        elif dir_norm > 0.15:
+            signal = +1
+            magnitude = abs(mag_factor) * 0.10
+        elif dir_norm < -0.15:
+            signal = -1
+            magnitude = abs(mag_factor) * 0.10
+        else:
+            signal = 0
+            magnitude = abs(mag_factor) * 0.05
+
+        loadings = self.dfm.get_loadings() if self.dfm is not None else None
+
+        return UnifiedPrediction(
+            signal=signal,
+            magnitude=round(float(magnitude), 4),
+            confidence=round(float(conf), 4),
+            direction_factor=round(dir_factor, 4),
+            magnitude_factor=round(mag_factor, 4),
+            forward_pred=forward_pred,
+            factor_loadings=loadings,
+        )
 
 
 __all__ = [
@@ -492,4 +602,6 @@ __all__ = [
     "ForwardPrediction",
     "KalmanFilter",
     "DynamicFactorModel",
+    "UnifiedPredictor",
+    "UnifiedPrediction",
 ]
