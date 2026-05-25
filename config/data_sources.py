@@ -254,6 +254,44 @@ US_INVEST = DataSourceConfig(
     publication_lag_days=90,
 )
 
+SHANGHAI_COMP = DataSourceConfig(
+    name="shanghai_composite",
+    description="Shanghai Composite Index (000001.SS)",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.equities",
+    fetcher_class="EquitiesFetcher",
+    fetch_kwargs={"ticker": "000001.SS"},
+    category="equity",
+    region="CN",
+    backends=["yfinance"],
+)
+
+CHINA_CPI_FRED = DataSourceConfig(
+    name="china_cpi_fred",
+    description="China CPI, FRED CHNCPIALLMINMEI",
+    update_frequency="monthly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "CHNCPIALLMINMEI"},
+    category="macro",
+    region="CN",
+    backends=["fred_csv"],
+    publication_lag_days=30,
+)
+
+CHINA_EPU = DataSourceConfig(
+    name="china_epu",
+    description="China EPU (Mainland), FRED CHNMAINLANDEPU",
+    update_frequency="monthly",
+    fetcher_module="src.data_fetcher.macro_economic",
+    fetcher_class="MacroEconomicFetcher",
+    fetch_kwargs={"series_id": "CHNMAINLANDEPU"},
+    category="sentiment",
+    region="CN",
+    backends=["fred_csv"],
+    publication_lag_days=0,
+)
+
 CHINA_CPI = DataSourceConfig(
     name="china_cpi",
     description="China CPI YoY (%) via akshare",
@@ -485,6 +523,9 @@ ALL_SOURCES: Dict[str, DataSourceConfig] = {
     "us_labor_productivity": US_PROD,
     "us_defense_gdp": US_DEFENSE_GDP,
     "us_private_investment": US_INVEST,
+    "shanghai_composite": SHANGHAI_COMP,
+    "china_cpi_fred": CHINA_CPI_FRED,
+    "china_epu": CHINA_EPU,
     # Equities
     "sp500": SP500,
     "csi300": CSI300,
