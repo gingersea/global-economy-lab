@@ -315,10 +315,10 @@ class DynamicFactorModel:
             if obs_clean.shape[0] > d_obs and d_obs > d:
                 cov = np.cov(obs_clean, rowvar=False)
                 eigvals, eigvecs = np.linalg.eigh(cov)
-                self.H = eigvecs[:, -d:] * np.sqrt(np.maximum(eigvals[-d:], 0.01))[:, None]
-                self.H = self.H.T if d > 1 else self.H[:, -1:].reshape(d_obs, d)
-                if d == 1 and self.H.ndim == 1:
-                    self.H = self.H.reshape(-1, 1)
+                scale = np.sqrt(np.maximum(eigvals[-d:], 0.01))
+                self.H = eigvecs[:, -d:] * scale[None, :]
+                if self.H.shape != (d_obs, d):
+                    self.H = self.H.reshape(d_obs, d)
             else:
                 self.H = np.random.randn(d_obs, d) * 0.1
         else:
@@ -561,13 +561,18 @@ class UnifiedPredictor:
         result = self.fit(observations)
         state = result.filtered_state
 
-        dir_factor = float(state[-1, 0])
-        mag_factor = float(state[-1, 1])
-        conf = float(result.confidence[-1]) if result.confidence is not None else 0.5
-
         forward_pred = None
         if self.dfm is not None:
             forward_pred = self.dfm.predict(observations, steps=1)
+
+        if forward_pred is not None and forward_pred.state_mean.shape[0] > 0:
+            dir_factor = float(forward_pred.state_mean[0, 0])
+            mag_factor = float(forward_pred.state_mean[0, 1]) if forward_pred.state_mean.shape[1] > 1 else 0.0
+            conf = float(forward_pred.confidence[0])
+        else:
+            dir_factor = float(state[-1, 0])
+            mag_factor = float(state[-1, 1])
+            conf = float(result.confidence[-1]) if result.confidence is not None else 0.5
 
         dir_norm = np.tanh(dir_factor * 0.1)
         if epu_percentile > 75:

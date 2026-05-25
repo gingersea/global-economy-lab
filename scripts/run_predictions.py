@@ -1,12 +1,11 @@
 """
-Unified multi-factor prediction driver.
+Unified prediction driver — Kalman-based 2-factor model.
 
-Runs the factor ensemble once → generates daily + monthly predictions.
-Monthly = integral of daily factor signals — inheriting higher accuracy.
+Extracts direction + magnitude latent factors from 12 factor signals,
+outputs {-1, 0, +1} signal with confidence and fuzzy magnitude.
 
 Usage:
-    python scripts/run_predictions.py --start-date 2008-01-01
-    python scripts/run_predictions.py --start-date 2000-01-01  # extended history
+    python scripts/run_predictions.py --start-date 1976-01-01
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
+import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -26,15 +26,14 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from config.backtest import ASSET_KEYS, MACRO_SPECS
 from config.data_sources import ALL_SOURCES, DataSourceConfig
-from src.analysis.prediction_hub import PredictionHub
-from src.analysis.reliability import ReliabilityFilter
+from src.analysis.factors import _compute_all_factors
+from src.analysis.kalman import UnifiedPredictor
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--start-date", default="2008-01-01")
+    parser.add_argument("--start-date", default="1976-01-01")
     parser.add_argument("--end-date", default="2026-05-25")
-    parser.add_argument("--output-dir", default="data/_meta/predictions")
     return parser.parse_args()
 
 
@@ -76,10 +75,10 @@ def _series_from_df(df: pd.DataFrame, col: str = "close") -> pd.Series:
 def main():
     args = parse_args()
     logger.info("=" * 64)
-    logger.info("Unified Multi-Factor Prediction Driver")
+    logger.info("Unified Predictor — 2-Factor Kalman DFM")
     logger.info(f"  Period: {args.start_date} → {args.end_date}")
     logger.info(f"  Assets: {ASSET_KEYS}")
-    logger.info(f"  Principle: monthly = integral(daily factor signals)")
+    logger.info(f"  Method: direction + magnitude latent factors")
     logger.info("=" * 64)
 
     asset_prices: Dict[str, pd.Series] = {}
@@ -91,87 +90,66 @@ def main():
     logger.info(f"Loaded {len(asset_prices)}/{len(ASSET_KEYS)} asset price series.")
 
     macro_indicators: Dict[str, pd.Series] = {}
-    yield_short = None
-    yield_long = None
-    risk_series = None
+    yield_short = yield_long = risk_series = None
+    m2_series = permit_series = epu_series = breakeven_series = None
 
-    for key, transform in MACRO_SPECS.items():
-        df = _safe_fetch(key, args.start_date, args.end_date)
-        s = _series_from_df(df, col="value")
+    for key, _ in MACRO_SPECS.items():
+        s = _series_from_df(_safe_fetch(key, args.start_date, args.end_date), col="value")
         if s.empty:
             continue
-        if key == "us_treasury_2y":
-            yield_short = s
-        elif key == "us_treasury_10y":
-            yield_long = s
-        elif key in ("us_nfci",):
-            risk_series = s
-        else:
-            macro_indicators[key] = s
-    logger.info(f"Loaded {len(macro_indicators)} macro indicators.")
+        if key == "us_treasury_2y": yield_short = s
+        elif key == "us_treasury_10y": yield_long = s
+        elif key == "us_nfci": risk_series = s
+        elif key == "us_m2": m2_series = s
+        elif key == "us_building_permits": permit_series = s
+        elif key == "us_epu": epu_series = s
+        elif key == "us_breakeven_10y": breakeven_series = s
+        else: macro_indicators[key] = s
 
-    fwd_returns = None
-    if asset_prices:
-        returns_list = []
-        for px in asset_prices.values():
-            if px is not None and not px.empty:
-                r = px.pct_change(fill_method=None)
-                if not r.empty:
-                    returns_list.append(r)
-        if returns_list:
-            fwd_returns = pd.concat(returns_list, axis=1).mean(axis=1)
-            logger.info(f"Computed equal-weighted forward returns ({len(fwd_returns)} obs).")
-
-    hub = PredictionHub()
-    result = hub.run(
-        asset_prices=asset_prices,
-        macro_indicators=macro_indicators,
-        yield_short=yield_short,
-        yield_long=yield_long,
-        risk_series=risk_series,
-        forward_returns=fwd_returns,
+    raw_factors = _compute_all_factors(
+        asset_prices, macro_indicators, yield_short, yield_long,
+        risk_series, m2_series, permit_series, epu_series, breakeven_series,
     )
+    factor_df = pd.DataFrame(raw_factors).sort_index().dropna(how="all")
+    obs_array = factor_df.values.astype(np.float64)
+    logger.info(f"Computed {len(factor_df.columns)} factor signals ({len(obs_array)} obs).")
 
-    mp = result.macro_prediction
-    dp = result.daily_prediction
+    epu_pct = 50.0
+    if epu_series is not None and not epu_series.empty:
+        epu_annual = epu_series.resample("YE").mean()
+        epu_pct = float((epu_annual.values < epu_annual.iloc[-1]).mean() * 100)
+    logger.info(f"EPU percentile: {epu_pct:.1f}%")
+
+    predictor = UnifiedPredictor()
+    prediction = predictor.predict(obs_array, epu_percentile=epu_pct)
+
+    fwd_pred = prediction.forward_pred
+    fwd_mean = fwd_pred.state_mean[0, 0] if fwd_pred is not None else 0
+    fwd_lo = fwd_pred.conf_lower[0, 0] if fwd_pred is not None else 0
+    fwd_hi = fwd_pred.conf_upper[0, 0] if fwd_pred is not None else 0
+
+    signal_symbol = {1: "▲ BULL", 0: "─ NEUTRAL", -1: "▼ BEAR"}
+
     logger.info(f"\n{'='*64}")
-    logger.info("Prediction Results (Kalman Filter / DFM)")
-
-    # Reliability filter using EPU data
-    epu_df = _safe_fetch("us_epu", args.start_date, args.end_date)
-    epu_s = _series_from_df(epu_df, col="value")
-    rf = ReliabilityFilter()
-    rf.fit(
-        epu_s if not epu_s.empty else pd.Series([0]),
-        fwd_returns if fwd_returns is not None and not fwd_returns.empty else pd.Series([0]),
-        risk_series if risk_series is not None and not risk_series.empty else pd.Series([0]),
-    )
-    rel = rf.assess(
-        epu_value=float(epu_s.iloc[-1]) if not epu_s.empty else 0,
-        vol_value=float(fwd_returns.tail(60).std()) if fwd_returns is not None and not fwd_returns.empty else 0,
-    )
-    reliability_tag = "✓ 可靠" if rel.is_reliable else "⚠️ 不可靠"
-    logger.info(f"  Reliability: {reliability_tag} | noise={rel.noise_level} | driver={rel.primary_driver}")
-    logger.info(f"  Expected accuracy: {rf.expected_accuracy(rel):.0%} (empirical)")
-    logger.info(f"  EPU percentile: {rel.details.get('epu_percentile', '?')}%")
-    logger.info(f"  KF confidence: {dp.confidence:.2%}")
+    logger.info("UNIFIED PREDICTION")
     logger.info(f"  {'─' * 40}")
-    logger.info(f"  MONTHLY (integral of KF-filtered state):")
-    logger.info(f"    Composite signal: {mp.composite_signal:+.4f}")
-    logger.info(f"    KF confidence:    {mp.confidence:.2%}")
-    logger.info(f"    Predicted regime: {mp.predicted_regime}")
-    logger.info(f"    Regime probs:     {mp.regime_probabilities}")
-    logger.info(f"    Forward pred 1mo: {mp.forward_pred_mean:+.4f}  [{mp.forward_pred_lower:+.4f}, {mp.forward_pred_upper:+.4f}]")
+    logger.info(f"  Signal:       {signal_symbol[prediction.signal]} ({prediction.signal:+d})")
+    logger.info(f"  Magnitude:    {prediction.magnitude:+.1%} (fuzzy)")
+    logger.info(f"  Confidence:   {prediction.confidence:.1%}")
+    logger.info(f"  EPU gate:     {'⚠️ NOISY — signal suppressed' if epu_pct > 75 else '✓ CLEAR — signal active'}")
     logger.info(f"  {'─' * 40}")
-    logger.info(f"  DAILY (latest KF-filtered state):")
-    logger.info(f"    Composite signal: {dp.composite_signal:+.4f}")
-    logger.info(f"    KF confidence:    {dp.confidence:.2%}")
-    logger.info(f"    Forward pred 1d:  {dp.forward_pred_mean:+.4f}  [{dp.forward_pred_lower:+.4f}, {dp.forward_pred_upper:+.4f}]")
+    logger.info(f"  Latent factors:")
+    logger.info(f"    Direction:  {prediction.direction_factor:+.4f}")
+    logger.info(f"    Magnitude:  {prediction.magnitude_factor:+.4f}")
     logger.info(f"  {'─' * 40}")
-    logger.info(f"  ASSET SIGNALS (daily):")
-    for asset, sig in sorted(dp.asset_signals.items(), key=lambda x: -abs(x[1])):
-        direction = "▲" if sig > 0.02 else ("▼" if sig < -0.02 else "─")
-        logger.info(f"    {direction} {asset:20s} {sig:+.4f}")
+    logger.info(f"  Forward pred 1-step: {fwd_mean:+.4f}  [{fwd_lo:+.4f}, {fwd_hi:+.4f}]")
+    if prediction.factor_loadings is not None and not prediction.factor_loadings.empty:
+        logger.info(f"  {'─' * 40}")
+        logger.info(f"  Factor loadings (|H| per factor):")
+        ld = prediction.factor_loadings
+        for i in range(min(len(ld), 8)):
+            row_norm = np.linalg.norm(ld.iloc[i].values)
+            logger.info(f"    {factor_df.columns[i]:28s} |H|={row_norm:.4f}")
     return 0
 
 
