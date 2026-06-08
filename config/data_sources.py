@@ -381,6 +381,54 @@ NIKKEI_225 = DataSourceConfig(
     backends=["yfinance", "stooq"],
 )
 
+HSCEI = DataSourceConfig(
+    name="hscei",
+    description="Hang Seng China Enterprises Index (^HSCE via yfinance)",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.equities",
+    fetcher_class="EquitiesFetcher",
+    fetch_kwargs={"ticker": "^HSCE"},
+    category="equity",
+    region="HK",
+    backends=["yfinance", "stooq"],
+)
+
+HANG_SENG_TECH = DataSourceConfig(
+    name="hang_seng_tech",
+    description="Hang Seng Tech Index (^HSTECH via yfinance)",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.equities",
+    fetcher_class="EquitiesFetcher",
+    fetch_kwargs={"ticker": "^HSTECH"},
+    category="equity",
+    region="HK",
+    backends=["yfinance", "stooq"],
+)
+
+TENCENT = DataSourceConfig(
+    name="tencent",
+    description="Tencent Holdings (0700.HK via yfinance)",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.equities",
+    fetcher_class="EquitiesFetcher",
+    fetch_kwargs={"ticker": "0700.HK"},
+    category="equity",
+    region="HK",
+    backends=["yfinance", "stooq"],
+)
+
+ALIBABA_HK = DataSourceConfig(
+    name="alibaba_hk",
+    description="Alibaba Group (9988.HK via yfinance)",
+    update_frequency="daily",
+    fetcher_module="src.data_fetcher.equities",
+    fetcher_class="EquitiesFetcher",
+    fetch_kwargs={"ticker": "9988.HK"},
+    category="equity",
+    region="HK",
+    backends=["yfinance", "stooq"],
+)
+
 # ── Bond data sources ─────────────────────────────────────────────────────────
 
 US_TREASURY_2Y = DataSourceConfig(
@@ -530,6 +578,10 @@ ALL_SOURCES: Dict[str, DataSourceConfig] = {
     "sp500": SP500,
     "csi300": CSI300,
     "hang_seng": HANG_SENG,
+    "hscei": HSCEI,
+    "hang_seng_tech": HANG_SENG_TECH,
+    "tencent": TENCENT,
+    "alibaba_hk": ALIBABA_HK,
     "nikkei_225": NIKKEI_225,
     # Bonds
     "us_treasury_2y": US_TREASURY_2Y,

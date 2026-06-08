@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Dict
 
 
-ASSET_KEYS = ["sp500", "gold", "crude_oil_wti", "dxy", "us_treasury_10y", "hang_seng", "nikkei_225", "eurusd", "shanghai_composite"]
+ASSET_KEYS = ["sp500", "gold", "crude_oil_wti", "dxy", "us_treasury_10y", "hang_seng", "hscei", "hang_seng_tech", "nikkei_225", "eurusd", "shanghai_composite"]
 
 MACRO_SPECS: Dict[str, str] = {
     "us_pmi": "level",
