@@ -2,8 +2,8 @@
 High-confidence predictor.
 
 Only operates on markets with proven directional accuracy >= 70%.
-Applies EPU regime-switching: separate 2-factor models for
-EPU-normal and EPU-high periods.
+Applies EPU regime-switching: separate 3-factor models (trend_momentum,
+mean_reversion, volatility_regime) for EPU-normal and EPU-high periods.
 
 Output tiers:
   Tier 1 (≥70%): Actionable prediction
@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from src.analysis.factors import trend_momentum, mean_reversion
+from src.analysis.factors import trend_momentum, mean_reversion, volatility_regime
 from sklearn.linear_model import LinearRegression
 
 
@@ -86,7 +86,7 @@ class HighConfidencePredictor:
         prices: pd.Series,
         epu_annual: pd.Series,
     ) -> Optional[Dict]:
-        """Fit per-regime 2-factor model for a single market.
+        """Fit per-regime 3-factor model (tm, mr, vr) for a single market.
 
         Returns dict with model parameters, or None if market fails criteria.
         """
@@ -100,14 +100,17 @@ class HighConfidencePredictor:
 
         tm = trend_momentum(prices).resample("YE").mean().reindex(annual_r.index)
         mr = mean_reversion(prices).resample("YE").mean().reindex(annual_r.index)
+        vr = volatility_regime(prices).resample("YE").mean().reindex(annual_r.index)
         fwd = annual_r.shift(-1).dropna()
 
-        valid = tm.dropna().index.intersection(fwd.index).intersection(epu_annual.dropna().index)
+        valid = tm.dropna().index.intersection(mr.dropna().index).intersection(
+            vr.dropna().index).intersection(fwd.index).intersection(epu_annual.dropna().index)
         if len(valid) < 10:
             return None
 
         tm_v = tm.loc[valid]
         mr_v = mr.loc[valid]
+        vr_v = vr.loc[valid]
         fwd_v = fwd.loc[valid]
         epu_v = epu_annual.loc[valid]
 
@@ -121,7 +124,7 @@ class HighConfidencePredictor:
         for label, mask in [("normal", ~high_epu), ("high_epu", high_epu)]:
             if mask.sum() < self.min_window:
                 continue
-            X = pd.DataFrame({"tm": tm_v[mask], "mr": mr_v[mask]}).fillna(0)
+            X = pd.DataFrame({"tm": tm_v[mask], "mr": mr_v[mask], "vr": vr_v[mask]}).fillna(0)
             y = fwd_v[mask]
             m = LinearRegression()
             m.fit(X, y)
@@ -133,6 +136,7 @@ class HighConfidencePredictor:
                 "n": int(mask.sum()),
                 "tm_coef": float(m.coef_[0]),
                 "mr_coef": float(m.coef_[1]),
+                "vr_coef": float(m.coef_[2]),
             }
 
         # Evaluate overall accuracy by predicting each point with correct regime model
@@ -142,7 +146,7 @@ class HighConfidencePredictor:
             if regime_key not in regime_models:
                 continue
             m = regime_models[regime_key]["model"]
-            x = np.array([[tm_v.iloc[i], mr_v.iloc[i]]])
+            x = np.array([[tm_v.iloc[i], mr_v.iloc[i], vr_v.iloc[i]]])
             overall_preds.append(float(m.predict(x)[0]))
 
         if len(overall_preds) < 10:
@@ -153,7 +157,7 @@ class HighConfidencePredictor:
         )
 
         # If regime-switched accuracy is lower than single-model, use single-model
-        X_all = pd.DataFrame({"tm": tm_v, "mr": mr_v}).fillna(0)
+        X_all = pd.DataFrame({"tm": tm_v, "mr": mr_v, "vr": vr_v}).fillna(0)
         m_single = LinearRegression()
         m_single.fit(X_all, fwd_v)
         yp_single = m_single.predict(X_all)
@@ -174,8 +178,10 @@ class HighConfidencePredictor:
             "regime_models": regime_models,
             "tm_mean": float(tm_v.mean()),
             "mr_mean": float(mr_v.mean()),
+            "vr_mean": float(vr_v.mean()),
             "tm_std": float(tm_v.std()),
             "mr_std": float(mr_v.std()),
+            "vr_std": float(vr_v.std()),
         }
         self._models[market] = result
         return result
@@ -217,16 +223,20 @@ class HighConfidencePredictor:
         ).dropna()
         tm_all = trend_momentum(prices).resample("YE").mean().reindex(annual_r.index)
         mr_all = mean_reversion(prices).resample("YE").mean().reindex(annual_r.index)
+        vr_all = volatility_regime(prices).resample("YE").mean().reindex(annual_r.index)
 
         tm_now = float(tm_all.iloc[-1]) if not np.isnan(tm_all.iloc[-1]) else 0
         mr_now = float(mr_all.iloc[-1]) if not np.isnan(mr_all.iloc[-1]) else 0
+        vr_now = float(vr_all.iloc[-1]) if not np.isnan(vr_all.iloc[-1]) else 0
         tm_z = (tm_now - cfg["tm_mean"]) / cfg["tm_std"] if cfg["tm_std"] > 0 else 0
         mr_z = (mr_now - cfg["mr_mean"]) / cfg["mr_std"] if cfg["mr_std"] > 0 else 0
+        vr_z = (vr_now - cfg["vr_mean"]) / cfg["vr_std"] if cfg["vr_std"] > 0 else 0
 
         # AR(1) projection
         tm_f = cfg["tm_mean"] + 0.75 * (tm_now - cfg["tm_mean"])
         mr_f = cfg["mr_mean"] + 0.75 * (mr_now - cfg["mr_mean"])
-        pred = float(m.predict([[tm_f, mr_f]])[0])
+        vr_f = cfg["vr_mean"] + 0.75 * (vr_now - cfg["vr_mean"])
+        pred = float(m.predict([[tm_f, mr_f, vr_f]])[0])
 
         signal = 1 if pred > 0.03 else (-1 if pred < -0.03 else 0)
         tier = 1 if cfg["accuracy"] >= 0.70 else (2 if cfg["accuracy"] >= 0.55 else 3)
@@ -244,6 +254,10 @@ class HighConfidencePredictor:
             detail_parts.append("深度超卖")
         elif mr_z < -0.5:
             detail_parts.append("明显超买")
+        if vr_z < -0.5:
+            detail_parts.append("高波动")
+        elif vr_z > 0.5:
+            detail_parts.append("低波动")
 
         return MarketPrediction(
             market=market,
@@ -253,7 +267,8 @@ class HighConfidencePredictor:
             tier=tier,
             regime=regime_key,
             factors={"tm": round(tm_now, 4), "tm_z": round(tm_z, 2),
-                     "mr": round(mr_now, 4), "mr_z": round(mr_z, 2)},
+                     "mr": round(mr_now, 4), "mr_z": round(mr_z, 2),
+                     "vr": round(vr_now, 4), "vr_z": round(vr_z, 2)},
             detail=" | ".join(detail_parts) if detail_parts else "neutral",
         )
 

@@ -28,6 +28,7 @@ MARKET_TICKERS = {
     "US": "^GSPC", "DE": "^GDAXI", "JP": "^N225", "GB": "^FTSE",
     "FR": "^FCHI", "IT": "FTSEMIB.MI", "CA": "^GSPTSE", "BR": "^BVSP",
     "KR": "^KS11", "IN": "^NSEI", "AU": "^AXJO", "CN": "000001.SS",
+    "HK": "^HSI",
 }
 TIER_LABELS = {1: "★★★ 可操作", 2: "★★ 参考(1年)", 3: "☆ 不可用"}
 
@@ -37,7 +38,7 @@ def load_prices():
     for name, ticker in MARKET_TICKERS.items():
         try:
             f = EquitiesFetcher(ticker=ticker)
-            df = f.fetch(start_date="1985-01-01", end_date="2026-05-25")
+            df = f.fetch(start_date="1985-01-01", end_date="2026-06-20")
             if df is not None and not df.empty:
                 idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(
                     df["date"] if "date" in df.columns else df.index
@@ -96,13 +97,14 @@ def main():
 
     if tier1:
         print("=== Tier 1 — 可操作 (≥70%) ===")
-        print(f'{"Market":>6s} {"Signal":>6s} {"ExpRet":>8s} {"Acc":>6s} {"tm(σ)":>8s} {"mr(σ)":>8s} {"Detail"}')
-        print("-" * 85)
+        print(f'{"Market":>6s} {"Signal":>6s} {"ExpRet":>8s} {"Acc":>6s} {"tm(σ)":>8s} {"mr(σ)":>8s} {"vr(σ)":>8s} {"Detail"}')
+        print("-" * 100)
         for p in tier1:
             s = "BULL" if p.signal > 0 else ("BEAR" if p.signal < 0 else "NEUT")
             print(
                 f"{p.market:>6s} {s:>6s} {p.expected_ret:>+7.1%} {p.confidence:>5.0%} "
-                f"{p.factors.get('tm_z',0):>+7.2f}σ {p.factors.get('mr_z',0):>+7.2f}σ  {p.detail}"
+                f"{p.factors.get('tm_z',0):>+7.2f}σ {p.factors.get('mr_z',0):>+7.2f}σ "
+                f"{p.factors.get('vr_z',0):>+7.2f}σ  {p.detail}"
             )
         print()
 
