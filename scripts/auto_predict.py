@@ -27,9 +27,9 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.analysis.high_confidence import HighConfidencePredictor
 from src.data_fetcher.equities import EquitiesFetcher
+from src.data_fetcher.macro_economic import MacroEconomicFetcher
 
 # ── Market definitions ───────────────────────────────────────
-# Adding HK (Hang Seng) per user request 2026-06-02
 MARKET_TICKERS = {
     "US": ("^GSPC", "美国 SP500"),
     "DE": ("^GDAXI", "德国 DAX"),
@@ -43,7 +43,15 @@ MARKET_TICKERS = {
     "IN": ("^NSEI", "印度 NIFTY"),
     "AU": ("^AXJO", "澳洲 ASX"),
     "CN": ("000001.SS", "中国 A股"),
-    "HK": ("^HSI", "恒生指数"),       # ← NEW: 港股
+    "HK": ("^HSI", "恒生指数"),
+}
+
+# ── Market-specific parameters (2026W26) ──────────────────────────
+MARKET_PARAMS = {
+    "HK": {"ar_coeff": 0.60, "signal_threshold": 0.05, "epu_label": "china"},
+    "CN": {"ar_coeff": 0.60, "signal_threshold": 0.05, "epu_label": "china"},
+    "BR": {"ar_coeff": 0.65, "signal_threshold": 0.05, "epu_label": "us"},
+    "IN": {"ar_coeff": 0.65, "signal_threshold": 0.03, "epu_label": "us"},
 }
 
 TIER_LABELS = {1: "★★★ 可操作", 2: "★★ 参考(1年)", 3: "☆ 不可用"}
@@ -66,10 +74,7 @@ def load_prices():
     for name, (ticker, _) in MARKET_TICKERS.items():
         try:
             f = EquitiesFetcher(ticker=ticker)
-            # Use cached data only — yfinance rate-limits from China.
-            # Cache covers 1985-01-01 → 2026-05-25 for all markets.
-            # Accept slight data staleness; OpenCode Sat model review handles freshness.
-            df = f.fetch(start_date="1985-01-01", end_date="2026-06-20")
+            df = f.fetch(start_date="1985-01-01", end_date="2026-06-28")
             if df is not None and not df.empty:
                 idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(
                     df["date"] if "date" in df.columns else df.index
@@ -90,37 +95,67 @@ def load_epu():
     return epu.resample("YE").mean()
 
 
+def load_china_epu():
+    """Load China EPU (CHNMAINLANDEPU) from FRED."""
+    try:
+        f = MacroEconomicFetcher(series_id="CHNMAINLANDEPU")
+        df = f.fetch(start_date="1985-01-01", end_date="2026-06-28")
+        if df is not None and not df.empty:
+            epu = df["value"] if "value" in df.columns else df.select_dtypes(include="number").iloc[:, 0]
+            return pd.Series(epu.values, index=pd.to_datetime(df.index), dtype=float).resample("YE").mean()
+    except Exception as e:
+        logger.warning(f"China EPU load failed: {e}")
+    return pd.Series(dtype=float)
+
+
 # ── Prediction ───────────────────────────────────────────────
 def run_predictions():
-    """Returns (predictions_list, epu_value, is_high_epu)."""
+    """Returns (predictions_list, epu_values, is_high_epu)."""
     prices = load_prices()
     epu_a = load_epu()
+    china_epu_a = load_china_epu()
     epu_now = float(epu_a.iloc[-1]) if len(epu_a) > 0 else 100.0
-    logger.info(f"Loaded {len(prices)} markets, EPU={epu_now:.0f}")
+    china_epu_now = float(china_epu_a.iloc[-1]) if len(china_epu_a) > 0 else epu_now
+    logger.info(f"Loaded {len(prices)} markets, US EPU={epu_now:.0f}, China EPU={china_epu_now:.0f}")
 
     predictor = HighConfidencePredictor(min_confidence=0.55)
-    predictor.fit_epu(epu_a)
+    predictor.fit_epu(epu_a, label="us")
+    if len(china_epu_a) > 0:
+        predictor.fit_epu(china_epu_a, label="china")
+
+    # Set per-market parameters
+    for market, params in MARKET_PARAMS.items():
+        predictor.set_market_params(market, **params)
 
     # Fit per-market models
     for market, px in sorted(prices.items()):
         try:
-            result = predictor.fit_market(market, px, epu_a)
+            epu_label = MARKET_PARAMS.get(market, {}).get("epu_label", "us")
+            epu_data = china_epu_a if epu_label == "china" else epu_a
+            result = predictor.fit_market(market, px, epu_data, epu_label=epu_label)
             if result:
+                ar = MARKET_PARAMS.get(market, {}).get("ar_coeff", 0.75)
                 logger.info(
                     f"  {market:6s}: acc={result['accuracy']:.0%} "
-                    f"(n={result['n_years']}y)"
+                    f"(n={result['n_years']}y) EPU={epu_label} AR(1)={ar:.2f}"
                 )
         except Exception as e:
             logger.warning(f"  {market}: fit failed — {e}")
 
-    predictions = predictor.predict_all(prices, epu_now)
-    return predictions, epu_now, predictor._is_high_epu(epu_now)
+    predictions = predictor.predict_all(
+        prices, epu_now,
+        epu_values={"us": epu_now, "china": china_epu_now},
+    )
+    is_high = predictor._is_high_epu(epu_now, "us")
+    return predictions, {"us": epu_now, "china": china_epu_now}, is_high
 
 
 # ── JSON output ──────────────────────────────────────────────
-def build_json(predictions, epu_val, is_high_epu, gen_time, week_info):
+def build_json(predictions, epu_values, is_high_epu, gen_time, week_info):
     """Convert predictions to structured JSON."""
     year, week_num, mon, sun = week_info
+    epu_val = epu_values["us"]
+    china_epu_val = epu_values.get("china", epu_val)
     
     tier1 = [p for p in predictions if p.tier == 1]
     tier2 = [p for p in predictions if p.tier == 2]
@@ -160,6 +195,7 @@ def build_json(predictions, epu_val, is_high_epu, gen_time, week_info):
                     np.sort(np.random.randn(1000) * 100 + 200), epu_val
                 ) / 10) if epu_val > 0 else 50.0, 1
             ),
+            "china_epu": round(china_epu_val, 1) if china_epu_val != epu_val else None,
         },
         "tier1_count": len(tier1),
         "tier2_count": len(tier2),
@@ -477,11 +513,13 @@ def main():
 
     # Step 1: Run predictions
     logger.info("Step 1: Running predictions...")
-    predictions, epu_val, is_high_epu = run_predictions()
+    predictions, epu_values, is_high_epu = run_predictions()
+    epu_val = epu_values["us"]
+    china_epu_val = epu_values.get("china", epu_val)
 
     # Step 2: Build JSON
     logger.info("Step 2: Building JSON output...")
-    data = build_json(predictions, epu_val, is_high_epu, gen_time, week_info)
+    data = build_json(predictions, epu_values, is_high_epu, gen_time, week_info)
     
     json_path = output_dir / "weekly_prediction.json"
     with open(json_path, "w") as f:
@@ -543,7 +581,9 @@ def main():
     
     logger.info("\n" + "=" * 64)
     logger.info(f"SUMMARY — {period_label}")
-    logger.info(f"  EPU: {epu_val:.0f} ({'HIGH' if is_high_epu else 'NORMAL'})")
+    logger.info(f"  US EPU: {epu_val:.0f} ({'HIGH' if is_high_epu else 'NORMAL'})")
+    if china_epu_val != epu_val:
+        logger.info(f"  China EPU: {china_epu_val:.0f} (HK/CN use for regime)")
     logger.info(f"  Tier 1 (≥70%): {len(tier1)} markets")
     for m in tier1:
         logger.info(f"    {m['name_cn']:12s} {m['signal']:5s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")

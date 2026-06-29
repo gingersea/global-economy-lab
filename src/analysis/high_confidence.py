@@ -9,6 +9,15 @@ Output tiers:
   Tier 1 (≥70%): Actionable prediction
   Tier 2 (55-70%): Reference only, 1-year horizon
   Tier 3 (<55%): Not published
+
+2026W26 improvement:
+  - Per-market EPU assignment: CN/HK use China EPU (CHNMAINLANDEPU)
+    instead of US EPU for regime switching.  HK markets are driven by
+    Chinese policy uncertainty, not US.
+  - Market-specific AR(1) decay coefficients: emerging markets (HK, CN,
+    BR, IN) mean-revert faster → lower AR(1) coefficient (0.60 vs 0.75).
+  - Market-specific signal thresholds: volatile markets (HK, CN, BR)
+    require stronger signal to trigger BUY/SELL (0.05 vs 0.03).
 """
 
 from __future__ import annotations
@@ -52,6 +61,9 @@ class MarketPrediction:
 class HighConfidencePredictor:
     """EPU regime-aware predictor for high-confidence markets.
 
+    Supports per-market EPU assignment (e.g., HK/CN use China EPU),
+    market-specific AR(1) decay coefficients, and signal thresholds.
+
     Args:
         epu_threshold_pct: EPU percentile for regime switch (default P75).
         min_confidence:     Minimum direction accuracy to publish (default 0.70).
@@ -68,28 +80,79 @@ class HighConfidencePredictor:
         self.min_confidence = min_confidence
         self.min_window = min_window
         self._models: Dict[str, Dict] = {}
-        self._epu_history: Optional[np.ndarray] = None
+        self._epu_history: Dict[str, np.ndarray] = {}   # label → values
+        self._epu_threshold: Dict[str, float] = {}       # label → threshold
+        self._market_epu_label: Dict[str, str] = {}       # market → 'us' | 'china'
+        self._market_ar_coeffs: Dict[str, float] = {}     # market → AR(1) decay
+        self._market_signal_threshold: Dict[str, float] = {}  # market → signal cutoff
 
-    def fit_epu(self, epu_annual: pd.Series):
-        """Store EPU distribution for percentile calculation."""
-        self._epu_history = epu_annual.dropna().values
-        self._epu_threshold = np.percentile(self._epu_history, self.epu_threshold_pct)
+    def fit_epu(self, epu_annual: pd.Series, label: str = "us"):
+        """Store EPU distribution for percentile calculation.
 
-    def _is_high_epu(self, epu_value: float) -> bool:
-        if self._epu_history is None:
+        Args:
+            epu_annual: Annual mean EPU values.
+            label:      Identifier for this EPU series (e.g. 'us', 'china').
+        """
+        self._epu_history[label] = epu_annual.dropna().values
+        self._epu_threshold[label] = np.percentile(
+            self._epu_history[label], self.epu_threshold_pct
+        )
+
+    def set_market_params(
+        self,
+        market: str,
+        ar_coeff: float = None,
+        signal_threshold: float = None,
+        epu_label: str = None,
+    ):
+        """Set per-market model parameters.
+
+        Args:
+            market:           Market identifier (e.g. 'HK', 'CN').
+            ar_coeff:         AR(1) decay coefficient (default 0.75).
+                              Lower = faster mean-reversion (EM markets).
+            signal_threshold: Return cutoff for BULL/BEAR signal (default 0.03).
+                              Higher = more conservative signals.
+            epu_label:        Which EPU to use for regime switching ('us', 'china').
+        """
+        if ar_coeff is not None:
+            self._market_ar_coeffs[market] = ar_coeff
+        if signal_threshold is not None:
+            self._market_signal_threshold[market] = signal_threshold
+        if epu_label is not None:
+            self._market_epu_label[market] = epu_label
+
+    def _is_high_epu(self, epu_value: float, label: str = "us") -> bool:
+        if label not in self._epu_threshold:
             return False
-        return epu_value > self._epu_threshold
+        return epu_value > self._epu_threshold[label]
 
     def fit_market(
         self,
         market: str,
         prices: pd.Series,
         epu_annual: pd.Series,
+        epu_label: str = None,
     ) -> Optional[Dict]:
         """Fit per-regime 3-factor model (tm, mr, vr) for a single market.
 
+        Args:
+            market:     Market identifier.
+            prices:     Daily price series.
+            epu_annual: Annual mean EPU values (US or China).
+            epu_label:  Which EPU to use for regime ('us' or 'china').
+                        If None, auto-assigned from _market_epu_label or default 'us'.
+
         Returns dict with model parameters, or None if market fails criteria.
         """
+        if epu_label is None:
+            epu_label = self._market_epu_label.get(market, "us")
+        self._market_epu_label[market] = epu_label
+
+        # Use the correct EPU threshold for this market
+        epu_thresh = self._epu_threshold.get(epu_label, np.percentile(epu_annual.dropna().values, self.epu_threshold_pct))
+        if epu_label not in self._epu_threshold:
+            self._epu_threshold[epu_label] = epu_thresh
         if prices is None or prices.empty:
             return None
 
@@ -114,7 +177,7 @@ class HighConfidencePredictor:
         fwd_v = fwd.loc[valid]
         epu_v = epu_annual.loc[valid]
 
-        high_epu = epu_v > self._epu_threshold
+        high_epu = epu_v > epu_thresh
         n_normal = (~high_epu).sum()
         n_high = high_epu.sum()
 
@@ -194,7 +257,8 @@ class HighConfidencePredictor:
     ) -> MarketPrediction:
         """Generate prediction for a single market.
 
-        Uses the appropriate regime model based on current EPU.
+        Uses the appropriate regime model based on current EPU,
+        with market-specific AR(1) decay and signal thresholds.
         """
         if market not in self._models:
             return MarketPrediction(
@@ -204,7 +268,8 @@ class HighConfidencePredictor:
             )
 
         cfg = self._models[market]
-        is_high = self._is_high_epu(epu_value)
+        epu_label = self._market_epu_label.get(market, "us")
+        is_high = self._is_high_epu(epu_value, epu_label)
         regime_key = "high_epu" if is_high else "normal"
 
         if regime_key not in cfg["regime_models"]:
@@ -232,20 +297,25 @@ class HighConfidencePredictor:
         mr_z = (mr_now - cfg["mr_mean"]) / cfg["mr_std"] if cfg["mr_std"] > 0 else 0
         vr_z = (vr_now - cfg["vr_mean"]) / cfg["vr_std"] if cfg["vr_std"] > 0 else 0
 
-        # AR(1) projection
-        tm_f = cfg["tm_mean"] + 0.75 * (tm_now - cfg["tm_mean"])
-        mr_f = cfg["mr_mean"] + 0.75 * (mr_now - cfg["mr_mean"])
-        vr_f = cfg["vr_mean"] + 0.75 * (vr_now - cfg["vr_mean"])
+        # Market-specific AR(1) decay coefficient
+        ar_coeff = self._market_ar_coeffs.get(market, 0.75)
+        tm_f = cfg["tm_mean"] + ar_coeff * (tm_now - cfg["tm_mean"])
+        mr_f = cfg["mr_mean"] + ar_coeff * (mr_now - cfg["mr_mean"])
+        vr_f = cfg["vr_mean"] + ar_coeff * (vr_now - cfg["vr_mean"])
         pred = float(m.predict([[tm_f, mr_f, vr_f]])[0])
 
-        signal = 1 if pred > 0.03 else (-1 if pred < -0.03 else 0)
+        # Market-specific signal threshold
+        sig_thresh = self._market_signal_threshold.get(market, 0.03)
+        signal = 1 if pred > sig_thresh else (-1 if pred < -sig_thresh else 0)
         tier = 1 if cfg["accuracy"] >= 0.70 else (2 if cfg["accuracy"] >= 0.55 else 3)
 
         detail_parts = []
         if is_high:
-            detail_parts.append("EPU高→趋势延续模式")
+            epu_source = "中EPU高" if epu_label == "china" else "EPU高"
+            detail_parts.append(f"{epu_source}→趋势延续模式")
         else:
-            detail_parts.append("EPU正常→均值回归模式")
+            epu_source = "中EPU正常" if epu_label == "china" else "EPU正常"
+            detail_parts.append(f"{epu_source}→均值回归模式")
         if tm_z < -0.5:
             detail_parts.append("趋势极弱")
         elif tm_z > 0.5:
@@ -265,7 +335,7 @@ class HighConfidencePredictor:
             expected_ret=round(float(pred), 4),
             confidence=round(cfg["accuracy"], 4),
             tier=tier,
-            regime=regime_key,
+            regime=regime_key if epu_label == "us" else f"{regime_key}_{epu_label}",
             factors={"tm": round(tm_now, 4), "tm_z": round(tm_z, 2),
                      "mr": round(mr_now, 4), "mr_z": round(mr_z, 2),
                      "vr": round(vr_now, 4), "vr_z": round(vr_z, 2)},
@@ -276,14 +346,26 @@ class HighConfidencePredictor:
         self,
         market_prices: Dict[str, pd.Series],
         epu_value: float,
+        epu_values: Dict[str, float] = None,
     ) -> List[MarketPrediction]:
-        """Generate predictions for all fitted markets."""
+        """Generate predictions for all fitted markets.
+
+        Args:
+            market_prices: Market → price series mapping.
+            epu_value:     Default US EPU value.
+            epu_values:    Per-label EPU values (e.g. {'us': 350, 'china': 376}).
+                           Falls back to epu_value if a label is not found.
+        """
+        if epu_values is None:
+            epu_values = {"us": epu_value}
         results = []
         for market in sorted(self._models.keys()):
             px = market_prices.get(market)
             if px is None:
                 continue
-            pred = self.predict(market, px, epu_value)
+            epu_label = self._market_epu_label.get(market, "us")
+            epu_val = epu_values.get(epu_label, epu_value)
+            pred = self.predict(market, px, epu_val)
             results.append(pred)
         results.sort(key=lambda x: -x.confidence)
         return results
