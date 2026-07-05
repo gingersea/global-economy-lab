@@ -1,0 +1,50 @@
+CRITICAL: Execute directly without asking for confirmation. Do not ask "Proceed?" or wait for approval. Take all actions autonomously.
+
+=== 任务：全球财经周预测 HTML 生成（周日执行）===
+
+## 项目位置：/data/global-economy-lab
+
+## 前置条件
+预测数据已生成：output/weekly_prediction.json（通过 python3 scripts/auto_predict.py --mode data-only）
+
+## 核心任务：生成预测 HTML
+
+- 读取 output/weekly_prediction.json
+- 以 gingerfamily.cn 上 prediction.html 的风格为模板生成 HTML
+
+### ⚠️ 必须包含的板块（按顺序）：
+
+1. **上周总结板块**（在预测表格之前）
+   - 从 output/archive/上周日期/ 读取上周预测 JSON
+   - 对比上周预测方向 vs 本周实际走势
+   - 统计 Tier 1/Tier 2 预测正确率（方向正确数/总市场数）
+   - 列出预测正确和错误的市场
+
+2. **上月总结板块**（在上周总结之后）
+   - 从 output/archive/ 找 4 周前的预测数据
+   - 对比上月预测方向 vs 当月实际走势
+   - 统计月度预测正确率
+   - 分析长期趋势判断的准确性
+
+3. **本周预测板块**（现有内容）
+   - EPU 区域：策略不确定性指数、百分位、模式说明
+   - Tier 1 表（≥70% 准确率）：市场/信号/未来12月预期收益/置信度/趋势σ/反转σ/YTD/周变/诊断/数据至
+   - Tier 2 表（55-70%）：同上格式，必须包含恒生指数和中国A股
+   - 恒生指数 🇭🇰 特殊标识
+   - A股标注"仅供参考"
+   - "本周关键判断"板块：全球共识、过热警告、EPU趋势
+   - "YTD 表现对比"柱状图（纯 CSS）
+   - 页面底部模型说明
+   - 预测周期日期标注
+
+### 样式要求
+- 暗色主题（#0a0a0f 背景），与 gingerfamily.cn 完全一致
+- 导航栏：首页、时频技术、AI前沿、科学探索、财经情报、全球预测
+- BULL=绿色(#4caf50)▲, BEAR=红色(#f44336)▼, NEUT=灰色(#888)─
+
+### 输出文件
+- output/prediction.html（覆盖）
+- output/prediction202625.html（本周存档，第25周）
+
+### 不做部署
+只生成 HTML 文件，不要尝试 SSH 或部署。

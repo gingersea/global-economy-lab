@@ -1,0 +1,25 @@
+CRITICAL: Execute directly without asking for confirmation. Do not ask "Proceed?" or wait for approval. Take all actions autonomously.
+
+=== 任务：全球财经预测模型每周修正（周六执行）===
+
+## 项目位置：/data/global-economy-lab
+
+## 核心任务
+1. 分析本周预测与实际市场走势的偏差
+2. 检查 run_high_confidence.py、kalman.py、factors.py 中的模型参数
+3. 查看 /data/global-economy-lab/output/archive/ 中历史预测的准确率趋势
+4. 优化模型参数（EPU 阈值、因子权重、市场分类等），提高预测准确率
+5. 将改进提交到 GitHub（git add + commit + push）
+
+## 港股专项
+- 恒生指数 (^HSI) 预测准确率目前偏低（约66%），需重点优化
+- 检查是否需要加入更多港股因子（如南向资金、HIBOR等）
+
+## 约束
+- 不删除任何历史预测数据（output/archive/ 下所有文件保留）
+- 改动用 git 记录，commit message 写清楚改动原因
+- 如果模型无显著改进空间，输出分析报告即可，不强改
+
+## 输出
+- 模型变更的 git commit
+- 一份简短的分析报告（Markdown）放入 output/archive/ 当前周目录

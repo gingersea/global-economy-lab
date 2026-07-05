@@ -1,0 +1,317 @@
+{
+  "generated": "2026-07-05T15:49:14+08:00",
+  "generated_display": "2026-07-05 15:49 CST",
+  "prediction_period": "2026年第28周 (7/6-7/12)",
+  "epu": {
+    "value": 350.1,
+    "regime": "NORMAL",
+    "percentile": 99.1,
+    "china_epu": 376.4
+  },
+  "vix": {
+    "current": 16.149999618530273,
+    "p80": 24.205999755859377,
+    "p20": 13.329999923706055,
+    "trend_5d": -0.1451,
+    "trend_20d": 0.0056
+  },
+  "tier1_count": 11,
+  "tier2_count": 2,
+  "signal_distribution": {
+    "BULL": 10,
+    "BEAR": 1,
+    "NEUT": 2
+  },
+  "actual_accuracy": {
+    "hit_rate": 0.5,
+    "hits": 6,
+    "misses": 6,
+    "total_scored": 12,
+    "period_start": "2026-06-29",
+    "period_end": "2026-07-05",
+    "markets": {
+      "DE": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.042,
+        "actual_dir": "UP",
+        "hit": true
+      },
+      "JP": {
+        "prior_signal": "BULL",
+        "actual_ret": -0.0134,
+        "actual_dir": "DOWN",
+        "hit": false
+      },
+      "GB": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.0138,
+        "actual_dir": "UP",
+        "hit": true
+      },
+      "FR": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.0128,
+        "actual_dir": "UP",
+        "hit": true
+      },
+      "IT": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.0259,
+        "actual_dir": "UP",
+        "hit": true
+      },
+      "CA": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.0018,
+        "actual_dir": "FLAT",
+        "hit": false
+      },
+      "BR": {
+        "prior_signal": "BULL",
+        "actual_ret": -0.0029,
+        "actual_dir": "FLAT",
+        "hit": false
+      },
+      "KR": {
+        "prior_signal": "BULL",
+        "actual_ret": -0.078,
+        "actual_dir": "DOWN",
+        "hit": false
+      },
+      "IN": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.013,
+        "actual_dir": "UP",
+        "hit": true
+      },
+      "AU": {
+        "prior_signal": "BULL",
+        "actual_ret": -0.0112,
+        "actual_dir": "DOWN",
+        "hit": false
+      },
+      "CN": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.0012,
+        "actual_dir": "FLAT",
+        "hit": false
+      },
+      "HK": {
+        "prior_signal": "BULL",
+        "actual_ret": 0.0181,
+        "actual_dir": "UP",
+        "hit": true
+      }
+    }
+  },
+  "markets": [
+    {
+      "market": "CA",
+      "name_cn": "加拿大 TSX",
+      "signal": "BULL",
+      "pred_ret": 0.1687,
+      "accuracy": 0.8537,
+      "tier": 1,
+      "tm_z": 1.13,
+      "mr_z": -0.77,
+      "vr_z": -0.5,
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "IN",
+      "name_cn": "印度 NIFTY",
+      "signal": "BULL",
+      "pred_ret": 0.2981,
+      "accuracy": 0.8421,
+      "tier": 1,
+      "tm_z": -1.32,
+      "mr_z": 1.13,
+      "vr_z": -0.89,
+      "detail": "EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "EM"
+    },
+    {
+      "market": "US",
+      "name_cn": "美国 SP500",
+      "signal": "BULL",
+      "pred_ret": 0.1346,
+      "accuracy": 0.8049,
+      "tier": 1,
+      "tm_z": 0.38,
+      "mr_z": -0.26,
+      "vr_z": 0.85,
+      "detail": "EPU高→高政策不确定性 | 低波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "KR",
+      "name_cn": "韩国 KOSPI",
+      "signal": "BEAR",
+      "pred_ret": 0.5631,
+      "accuracy": 0.7931,
+      "tier": 1,
+      "tm_z": 3.77,
+      "mr_z": -4.36,
+      "vr_z": -1.24,
+      "detail": "🔥 EXTREME OVERHEAT (tm=3.8σ > +3.5σ) → BEAR | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": true,
+      "group": "EM"
+    },
+    {
+      "market": "FR",
+      "name_cn": "法国 CAC40",
+      "signal": "BULL",
+      "pred_ret": 0.0719,
+      "accuracy": 0.7778,
+      "tier": 1,
+      "tm_z": 0.01,
+      "mr_z": -0.08,
+      "vr_z": -0.41,
+      "detail": "EPU高→高政策不确定性 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "HK",
+      "name_cn": "恒生指数",
+      "signal": "BULL",
+      "pred_ret": 0.0945,
+      "accuracy": 0.7692,
+      "tier": 1,
+      "tm_z": -0.84,
+      "mr_z": 1.3,
+      "vr_z": -0.38,
+      "detail": "中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | VIX=16.1↓",
+      "regime": "high_epu_china_china",
+      "last_date": "",
+      "overheat": false,
+      "group": "EM"
+    },
+    {
+      "market": "DE",
+      "name_cn": "德国 DAX",
+      "signal": "BULL",
+      "pred_ret": 0.104,
+      "accuracy": 0.7632,
+      "tier": 1,
+      "tm_z": -0.23,
+      "mr_z": 0.18,
+      "vr_z": 0.36,
+      "detail": "EPU高→高政策不确定性 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "GB",
+      "name_cn": "英国 FTSE",
+      "signal": "BULL",
+      "pred_ret": 0.0829,
+      "accuracy": 0.7317,
+      "tier": 1,
+      "tm_z": 0.74,
+      "mr_z": -0.48,
+      "vr_z": -0.7,
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "JP",
+      "name_cn": "日经 225",
+      "signal": "NEUT",
+      "pred_ret": 0.3022,
+      "accuracy": 0.7317,
+      "tier": 1,
+      "tm_z": 2.53,
+      "mr_z": -2.7,
+      "vr_z": -0.88,
+      "detail": "⚠ OVERHEAT (tm=2.5σ > +2.5σ) → NEUT | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": true,
+      "group": "DM"
+    },
+    {
+      "market": "AU",
+      "name_cn": "澳洲 ASX",
+      "signal": "BULL",
+      "pred_ret": 0.0498,
+      "accuracy": 0.7273,
+      "tier": 1,
+      "tm_z": -0.38,
+      "mr_z": 0.35,
+      "vr_z": -0.53,
+      "detail": "EPU高→高政策不确定性 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "IT",
+      "name_cn": "意大利 MIB",
+      "signal": "BULL",
+      "pred_ret": 0.1475,
+      "accuracy": 0.7143,
+      "tier": 1,
+      "tm_z": 1.34,
+      "mr_z": -1.23,
+      "vr_z": -0.83,
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "DM"
+    },
+    {
+      "market": "CN",
+      "name_cn": "中国 A股",
+      "signal": "NEUT",
+      "pred_ret": 0.0464,
+      "accuracy": 0.6552,
+      "tier": 2,
+      "tm_z": 0.23,
+      "mr_z": -0.04,
+      "vr_z": -0.77,
+      "detail": "EPU高→高政策不确定性 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "EM"
+    },
+    {
+      "market": "BR",
+      "name_cn": "巴西 Bovespa",
+      "signal": "BULL",
+      "pred_ret": 0.21,
+      "accuracy": 0.6364,
+      "tier": 2,
+      "tm_z": 0.12,
+      "mr_z": 0.24,
+      "vr_z": -0.82,
+      "detail": "EPU高→高政策不确定性 | 高波动 | VIX=16.1↓",
+      "regime": "high_epu",
+      "last_date": "",
+      "overheat": false,
+      "group": "EM"
+    }
+  ]
+}
