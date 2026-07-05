@@ -145,20 +145,12 @@ h2.section-title{{font-size:18px;font-weight:700;margin:36px 0 20px;color:#e0e0e
 
 # ── Actual market data (fetched from yfinance on 2026-07-05) ──
 
+# W27 actual returns (6/29-7/5) from actual_accuracy in weekly_prediction.json
 W27_ACTUAL = {
-    "US": {"ret": 1.76, "start_date": "6/26", "end_date": "7/2"},
-    "DE": {"ret": 4.49, "start_date": "6/26", "end_date": "7/3"},
-    "JP": {"ret": 0.55, "start_date": "6/26", "end_date": "7/3"},
-    "GB": {"ret": 1.63, "start_date": "6/26", "end_date": "7/3"},
-    "FR": {"ret": 1.47, "start_date": "6/26", "end_date": "7/3"},
-    "IT": {"ret": 3.03, "start_date": "6/26", "end_date": "7/3"},
-    "CA": {"ret": 0.76, "start_date": "6/26", "end_date": "7/3"},
-    "BR": {"ret": 0.56, "start_date": "6/26", "end_date": "7/3"},
-    "KR": {"ret": -3.84, "start_date": "6/26", "end_date": "7/3"},
-    "IN": {"ret": 0.89, "start_date": "6/25", "end_date": "7/3"},
-    "AU": {"ret": 0.92, "start_date": "6/26", "end_date": "7/3"},
-    "CN": {"ret": 0.41, "start_date": "6/26", "end_date": "7/3"},
-    "HK": {"ret": 2.99, "start_date": "6/26", "end_date": "7/3"},
+    "DE": {"ret": 4.2}, "JP": {"ret": -1.34}, "GB": {"ret": 1.38},
+    "FR": {"ret": 1.28}, "IT": {"ret": 2.59}, "CA": {"ret": 0.18},
+    "BR": {"ret": -0.29}, "KR": {"ret": -7.8}, "IN": {"ret": 1.3},
+    "AU": {"ret": -1.12}, "CN": {"ret": 0.12}, "HK": {"ret": 1.81},
 }
 
 JUNE_ACTUAL = {
@@ -185,7 +177,15 @@ MARKET_NAMES = {
 
 
 def compare_prediction(pred_markets, actual_dict, pred_source_label="预测"):
-    """Compare predicted signals vs actual returns. Returns (correct, wrong, neutral) lists."""
+    """Compare predicted signals vs actual returns. Returns (correct, wrong, neutral) lists.
+    
+    Logic:
+      - BULL + UP -> correct
+      - BULL + DOWN/FLAT -> wrong
+      - BEAR + DOWN -> correct
+      - BEAR + UP/FLAT -> wrong
+      - NEUT -> neutral
+    """
     correct = []
     wrong = []
     neutral = []
@@ -204,23 +204,21 @@ def compare_prediction(pred_markets, actual_dict, pred_source_label="预测"):
             neutral.append((m, None, "N/A"))
             continue
         
-        actual_dir = "UP" if actual_ret > 0.02 else ("DOWN" if actual_ret < -0.02 else "FLAT")
+        actual_dir = "UP" if actual_ret > 0.3 else ("DOWN" if actual_ret < -0.3 else "FLAT")
         predicted_dir = "UP" if signal == "BULL" else ("DOWN" if signal == "BEAR" else "NEUT")
         
         if predicted_dir == "NEUT":
             neutral.append((m, actual_ret, actual_dir))
-        elif predicted_dir == "UP" and actual_ret > -0.03:
-            if actual_ret > 0.02:
+        elif predicted_dir == "UP":
+            if actual_dir == "UP":
                 correct.append((m, actual_ret, actual_dir))
             else:
-                neutral.append((m, actual_ret, actual_dir))
-        elif predicted_dir == "DOWN" and actual_ret < 0.03:
-            if actual_ret < -0.02:
+                wrong.append((m, actual_ret, actual_dir))
+        elif predicted_dir == "DOWN":
+            if actual_dir == "DOWN":
                 correct.append((m, actual_ret, actual_dir))
             else:
-                neutral.append((m, actual_ret, actual_dir))
-        else:
-            wrong.append((m, actual_ret, actual_dir))
+                wrong.append((m, actual_ret, actual_dir))
     
     return correct, wrong, neutral
 
@@ -267,40 +265,65 @@ def build_last_week_review(prev_pred, actual_dict):
         neutral_parts.append(f'{tc}{name} {signal_html(m["signal"])} → {pct_str(ret) if ret is not None else "N/A"}')
     
     # Summary note
-    if total_dir > 0 and len(correct) / total_dir >= 0.85:
+    if total_dir > 0:
+        actual_rate = len(correct) / total_dir
+    else:
+        actual_rate = 0
+    if total_dir > 0 and actual_rate >= 0.85:
         summary_color = "#4caf50"
         summary_text = "▸ 上周总结：预测表现优秀"
-    elif total_dir > 0 and len(correct) / total_dir >= 0.70:
+    elif total_dir > 0 and actual_rate >= 0.60:
         summary_color = "#ff9800"
-        summary_text = "▸ 上周总结：预测表现良好"
+        summary_text = "▸ 上周总结：预测表现一般"
     else:
         summary_color = "#f44336"
-        summary_text = "▸ 上周总结：预测准确率需要关注"
+        summary_text = "▸ 上周总结：预测表现不及预期"
+    
+    # Build summary detail based on actual outcomes
+    top_wrong_market = sorted(wrong, key=lambda x: abs(x[1]))[-1] if wrong else None
+    wrong_detail = f"最大失误：{top_wrong_market[0]['name_cn']} BULL → {pct_str(top_wrong_market[1])}" if top_wrong_market else ""
+    flat_markets = [x for x in wrong if x[2] == "FLAT"]
+    flat_detail = f"，{', '.join([m['market'] for m, _, _ in flat_markets])} BULL但平盘" if flat_markets else ""
+    summary_detail = (
+        f"W27 预测方向正确率 {actual_rate:.1%}（{len(correct)}/{total_dir}）。"
+        f"Tier1 {t1_hit}/{t1_hit+len(t1_wrong)} 正确，Tier2 {t2_hit}/{t2_total_dir} 正确。"
+        f"{wrong_detail}{flat_detail}。高 EPU 环境下平盘市场增多，方向判断难度加大。"
+    )
+    
+    def _actual_html(ret_val, dir_label):
+        """Generate actual direction HTML cell."""
+        if dir_label == "UP":
+            return f'<span style="color:#4caf50">▲ UP {pct_str(ret_val)}</span>'
+        elif dir_label == "DOWN":
+            return f'<span style="color:#f44336">▼ DOWN {pct_str(ret_val)}</span>'
+        elif dir_label == "FLAT":
+            return f'<span style="color:#888">─ FLAT ({pct_str(ret_val)})</span>'
+        else:
+            return '<span style="color:#666">N/A</span>'
     
     correct_rows = "\n".join(
-        f'<tr><td>{tier_badge(m["tier"])} {m["name_cn"]}</td>'
+        f'<tr style="background:rgba(76,175,80,0.04)"><td>{tier_badge(m["tier"])} {m["name_cn"]}</td>'
         f'<td>{signal_html(m["signal"])}</td>'
-        f'<td><span style="color:#4caf50">▲ UP {pct_str(ret)}</span></td>'
+        f'<td>{_actual_html(ret, dir_)}</td>'
         f'<td>{pct_str(ret)}</td>'
         f'<td><span style="color:#4caf50">✅ 正确</span></td></tr>'
-        for m, ret, _ in correct
+        for m, ret, dir_ in correct
     )
     wrong_rows = "\n".join(
         f'<tr style="background:rgba(244,67,54,0.04)"><td>{tier_badge(m["tier"])} {m["name_cn"]}</td>'
         f'<td>{signal_html(m["signal"])}</td>'
-        f'<td><span style="color:#f44336">▼ DOWN {pct_str(ret)}</span></td>'
+        f'<td>{_actual_html(ret, dir_)}</td>'
         f'<td>{pct_str(ret)}</td>'
         f'<td><span style="color:#f44336">❌ 错误</span></td></tr>'
-        for m, ret, _ in wrong
+        for m, ret, dir_ in wrong
     )
     neutral_rows = "\n".join(
         f'<tr><td>{tier_badge(m["tier"])} {m["name_cn"]}</td>'
         f'<td>{signal_html(m["signal"])}</td>'
-        f'<td><span style="color:#666">'
-        f'{"▲ UP" if ret is not None and ret > 0 else ("▼ DOWN" if ret is not None else "N/A")} {pct_str(ret)}</span></td>'
+        f'<td>{_actual_html(ret, dir_)}</td>'
         f'<td>{pct_str(ret) if ret is not None else "N/A"}</td>'
-        f'<td><span style="color:#666">─ 平盘/接近</span></td></tr>'
-        for m, ret, _ in neutral
+        f'<td><span style="color:#666">─ 无方向</span></td></tr>'
+        for m, ret, dir_ in neutral
     )
     
     review_table_rows = (correct_rows + "\n" + wrong_rows + "\n" + neutral_rows) if neutral else (correct_rows + "\n" + wrong_rows)
@@ -309,8 +332,9 @@ def build_last_week_review(prev_pred, actual_dict):
     <h2 class="section-title">📊 上周预测回顾 ({period})</h2>
     <div class="review-card">
         <p style="color:#888;font-size:13px;margin-bottom:16px">
-            上周 ({period}) 预测全部市场为 <span class="signal-bull">▲ BULL</span>，
-            对比本周 ({period}) 实际走势 (6/26→7/3)：
+            上周 ({period}) 预测，
+            {', '.join(set(f'<span class="signal-{m["signal"].lower()}">{m["signal"]}</span>' for m in prev_markets))}，
+            对比本周实际走势：
         </p>
         <div class="summary-stats">
             <div class="stat">
@@ -351,7 +375,7 @@ def build_last_week_review(prev_pred, actual_dict):
         <div style="margin-top:20px;padding:16px;background:rgba({','.join(['76,175,80' if summary_color == '#4caf50' else ('255,152,0' if summary_color == '#ff9800' else '244,67,54')])},0.05);border-radius:10px;border:1px solid rgba({','.join(['76,175,80' if summary_color == '#4caf50' else ('255,152,0' if summary_color == '#ff9800' else '244,67,54')])},0.1)">
             <p style="font-size:13px;color:#aaa;margin:0">
                 <span style="color:{summary_color};font-weight:700">{summary_text}</span>
-                EPU 高企（P93.5）环境下趋势延续模式表现稳定，模型在多数市场保持方向判断准确。韩国 KOSPI 为唯一 Tier 1 方向错误市场（周内震荡-3.84%，极热后的回调）。
+                {summary_detail}
             </p>
         </div>
     </div>"""
@@ -510,14 +534,18 @@ def build_current_prediction(data):
         tm = m.get("tm_z", 0)
         mr = m.get("mr_z", 0)
         vr = m.get("vr_z", 0)
-        if tm > 2.0:
+        if m.get("overheat", False) or tm > 3.5:
             tags.append('<span class="overheat-tag">⚠过热</span>')
-        elif tm < -1.5:
-            tags.append('<span class="oversold-tag">弱趋势</span>')
-        if mr < -2.5:
+        elif tm > 2.0:
+            tags.append('<span class="overheat-tag">⚠过热</span>')
+        if mr < -3.0:
             tags.append('<span class="overheat-tag">超买</span>')
         elif mr > 2.5:
             tags.append('<span class="oversold-tag">超卖</span>')
+        elif mr < -1.5:
+            tags.append('<span class="overheat-tag">偏热</span>')
+        elif mr > 1.0:
+            tags.append('<span class="oversold-tag">偏卖</span>')
         return ' '.join(tags)
     
     def market_row(m):
@@ -607,6 +635,10 @@ def build_current_prediction(data):
     
     overheat_list = "\n".join(overheated) if overheated else "<li>当前无显著过热信号</li>"
     
+    # Signal summary helpers
+    def _count_signal(mkts, sig):
+        return len([m for m in mkts if m["signal"] == sig])
+    
     return f"""
     <h2 class="section-title">🔮 本周预测 ({period})</h2>
 
@@ -641,7 +673,7 @@ def build_current_prediction(data):
     {hk_html}
 
     <h3 style="font-size:15px;color:#4caf50;margin-bottom:16px;">★★★ Tier 1 — 高置信度 (≥70% 准确率)</h3>
-    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">预测未来12个月收益方向 · YTD = 年初至今实际涨幅 · 周变 = 本周({period.split(' ')[1] if ' ' in period else '当前周'})变化 · 数据至 = 最近交易日</p>
+    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">预测未来12个月收益方向 · YTD = 年初至今实际涨幅 · 周变 = 上周(6/29-7/5)变化 · 数据至 = 最近交易日</p>
     <div style="overflow-x:auto">
     <table class="predict-table" style="min-width:1000px">
         <thead><tr>
@@ -678,12 +710,16 @@ def build_current_prediction(data):
     <div class="card">
         <div class="grid-2">
             <div>
-                <h4 style="font-size:14px;color:#4caf50;margin-bottom:8px">🌍 全球共识：全面看多</h4>
+                <h4 style="font-size:14px;color:#4caf50;margin-bottom:8px">🌍 全球共识：分化开始</h4>
                 <p style="font-size:13px;color:#aaa;line-height:1.7">
                     EPU 当前值 <strong style="color:#f44336">{epu['value']} (P{epu['percentile']})</strong>，处于历史极端高位。
-                    模型在所有市场统一触发 <strong>趋势延续模式</strong>。
-                    Tier 1 全部 {len(tier1)} 个市场均发出 BULL 信号，Tier 2 中 BR 为 BULL、CN 为 NEUT。
-                    EPU 阈值效应下的典型表现：高不确定性环境掩盖了微弱反转信号，趋势因子权重提升。
+                    模型在所有市场统一触发 <strong>趋势延续模式</strong>，但过热保护机制在部分市场激活。
+                    Tier 1 中 {_count_signal(tier1, "BULL")} BULL + {_count_signal(tier1, "BEAR")} BEAR + {_count_signal(tier1, "NEUT")} NEUT；
+                    Tier 2 中 {_count_signal(tier2, "BULL")} BULL + {_count_signal(tier2, "NEUT")} NEUT。
+                    韩国 KOSPI 因极端过热（tm=+3.77σ）触发 BEAR 信号；
+                    日经 225 因过热（tm=+2.53σ）转为 NEUT；
+                    中国 A股降至 NEUT。
+                    全球化与分化的关键转折——极度超买市场的风险信号正在显现。
                     中国EPU 为 {epu.get('china_epu', 'N/A')}，对恒生指数和中国A股的影响显著。
                 </p>
             </div>
@@ -765,24 +801,32 @@ def build_outlook(epu, period_str):
             高 EPU（P{epu['percentile']}）环境下，模型的趋势延续模式虽然历史表现稳健，但极端政治经济环境可能引发非线性市场反应。
             不建议在此阶段过度集中于单一市场或方向，尤其是已出现极端超买信号的韩国（趋势 +3.77σ）和日本（趋势 +2.53σ）市场。
             下周重点关注 EPU 是否出现拐点信号，若 EPU 回落至 250 以下，部分市场的均值回归压力将显著释放。
-            韩国 KOSPI W27 周跌 -3.84%，可能已开始超买回调，需持续关注。
+            韩国 KOSPI W27 周跌 -7.80%，已开始超买回调，需持续关注。
             </p>
         </div>
     </div>"""
 
 
 def main():
-    # Set week info
-    today = date.today()
-    iso = today.isocalendar()
-    year, week_num = iso[0], iso[1]
-    mon = today - timedelta(days=today.weekday())
-    sun = mon + timedelta(days=6)
-    
-    # Load current prediction
+    # Load current prediction first
     cur_pred = load_json(OUTPUT_DIR / "weekly_prediction.json")
+    
+    # Extract week number from prediction_period (format: "2026年第28周 (7/6-7/12)")
+    import re
+    period = cur_pred.get("prediction_period", "")
+    week_match = re.search(r'第(\d+)周', period)
+    if week_match:
+        week_num = int(week_match.group(1))
+    else:
+        today = date.today()
+        iso = today.isocalendar()
+        year, week_num = iso[0], iso[1] + 1  # +1 for next week
+    year = 2026
+    
+    # Get today/current date for archive naming
+    today = date.today()
     gen_time = cur_pred["generated_display"]
-    period = cur_pred.get("prediction_period", f"{year}年第{week_num}周 ({mon.month}/{mon.day}-{sun.month}/{sun.day})")
+    period = cur_pred.get("prediction_period", f"{year}年第{week_num}周")
     epu = cur_pred["epu"]
     
     # Load last week prediction (6/30 W27 prediction)
