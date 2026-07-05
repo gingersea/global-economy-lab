@@ -32,13 +32,15 @@ MARKET_TICKERS = {
 }
 TIER_LABELS = {1: "★★★ 可操作", 2: "★★ 参考(1年)", 3: "☆ 不可用"}
 
-# ── Market-specific parameters (2026W26) ──────────────────────────
-# Emerging markets: lower AR(1) → faster mean-reversion (policy-driven)
-# China/HK: use China EPU instead of US EPU for regime switching
-# High-volatility markets: higher signal threshold
+# ── Market-specific parameters (2026W27) ──────────────────────────
+# HK: China EPU (verified +10pp improvement vs US EPU, now 77%)
+# CN: REVERTED to US EPU — China EPU caused -10pp regression (65→55%).
+#     A-shares dominated by retail flow/policy directives, not EPU.
+#     Higher signal threshold + lower AR to reduce false signals.
+# IN: only 19y data, 0 normal EPU years → single-model fallback.
 MARKET_PARAMS = {
     "HK": {"ar_coeff": 0.60, "signal_threshold": 0.05, "epu_label": "china"},
-    "CN": {"ar_coeff": 0.60, "signal_threshold": 0.05, "epu_label": "china"},
+    "CN": {"ar_coeff": 0.55, "signal_threshold": 0.06, "epu_label": "us"},
     "BR": {"ar_coeff": 0.65, "signal_threshold": 0.05, "epu_label": "us"},
     "IN": {"ar_coeff": 0.65, "signal_threshold": 0.03, "epu_label": "us"},
 }
@@ -49,7 +51,7 @@ def load_prices():
     for name, ticker in MARKET_TICKERS.items():
         try:
             f = EquitiesFetcher(ticker=ticker)
-            df = f.fetch(start_date="1985-01-01", end_date="2026-06-28")
+            df = f.fetch(start_date="1985-01-01", end_date="2026-07-05")
             if df is not None and not df.empty:
                 idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(
                     df["date"] if "date" in df.columns else df.index
@@ -70,7 +72,7 @@ def load_china_epu():
     """Load China EPU (CHNMAINLANDEPU) from FRED."""
     try:
         f = MacroEconomicFetcher(series_id="CHNMAINLANDEPU")
-        df = f.fetch(start_date="1985-01-01", end_date="2026-06-28")
+        df = f.fetch(start_date="1985-01-01", end_date="2026-07-05")
         if df is not None and not df.empty:
             epu = df["value"] if "value" in df.columns else df.select_dtypes(include="number").iloc[:, 0]
             return pd.Series(epu.values, index=pd.to_datetime(df.index), dtype=float).resample("YE").mean()

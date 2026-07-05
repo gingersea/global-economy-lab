@@ -6,18 +6,27 @@ Applies EPU regime-switching: separate 3-factor models (trend_momentum,
 mean_reversion, volatility_regime) for EPU-normal and EPU-high periods.
 
 Output tiers:
-  Tier 1 (≥70%): Actionable prediction
+  Tier 1 (>=70%): Actionable prediction
   Tier 2 (55-70%): Reference only, 1-year horizon
   Tier 3 (<55%): Not published
 
 2026W26 improvement:
-  - Per-market EPU assignment: CN/HK use China EPU (CHNMAINLANDEPU)
+  - Per-market EPU assignment: HK uses China EPU (CHNMAINLANDEPU)
     instead of US EPU for regime switching.  HK markets are driven by
     Chinese policy uncertainty, not US.
   - Market-specific AR(1) decay coefficients: emerging markets (HK, CN,
-    BR, IN) mean-revert faster → lower AR(1) coefficient (0.60 vs 0.75).
+    BR, IN) mean-revert faster -> lower AR(1) coefficient (0.60 vs 0.75).
   - Market-specific signal thresholds: volatile markets (HK, CN, BR)
     require stronger signal to trigger BUY/SELL (0.05 vs 0.03).
+
+2026W27 improvement:
+  - CN A-shares REVERTED to US EPU: China EPU caused -10pp regression
+    (65% -> 55%).  A-shares dominated by retail flow and policy directives,
+    not EPU-driven institutional sentiment.
+  - CN AR(1) lowered to 0.55 (faster mean-reversion) and signal threshold
+    raised to 0.06 (fewer false signals).
+  - Fixed: sklearn feature names warning (fit with .values).
+  - Fixed: single-model fallback log message showed duplicate values.
 """
 
 from __future__ import annotations
@@ -190,7 +199,7 @@ class HighConfidencePredictor:
             X = pd.DataFrame({"tm": tm_v[mask], "mr": mr_v[mask], "vr": vr_v[mask]}).fillna(0)
             y = fwd_v[mask]
             m = LinearRegression()
-            m.fit(X, y)
+            m.fit(X.values, y)
             yp = m.predict(X)
             acc = float((np.sign(yp) == np.sign(y.values)).mean())
             regime_models[label] = {
@@ -222,13 +231,14 @@ class HighConfidencePredictor:
         # If regime-switched accuracy is lower than single-model, use single-model
         X_all = pd.DataFrame({"tm": tm_v, "mr": mr_v, "vr": vr_v}).fillna(0)
         m_single = LinearRegression()
-        m_single.fit(X_all, fwd_v)
-        yp_single = m_single.predict(X_all)
+        m_single.fit(X_all.values, fwd_v)
+        yp_single = m_single.predict(X_all.values)
         single_acc = float((np.sign(yp_single) == np.sign(fwd_v.values)).mean())
 
         if single_acc > overall_acc:
+            regime_acc = overall_acc  # save before overwrite for logging
             overall_acc = single_acc
-            logger.info(f"  {market}: single-model ({single_acc:.0%}) > regime-switched ({overall_acc:.0%}) — using single")
+            logger.info(f"  {market}: single-model ({single_acc:.0%}) > regime-switched ({regime_acc:.0%}) — using single")
 
         if overall_acc < self.min_confidence:
             logger.info(f"  {market}: accuracy {overall_acc:.0%} < {self.min_confidence:.0%} threshold — skipping")
