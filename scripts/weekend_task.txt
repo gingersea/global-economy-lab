@@ -1,0 +1,59 @@
+CRITICAL: Execute directly without asking for confirmation. Do not ask "Proceed?" or wait for approval. Take all actions autonomously.
+
+=== 任务：全球财经周末分析 — 总结+预测+部署 ===
+
+## 项目位置：/data/global-economy-lab
+
+## 前置（已完成）
+- python3 scripts/auto_predict.py --mode data-only 已运行
+- output/weekly_prediction.json 已生成，2026年第29周 7/13-7/19
+- 预测: 10 Tier-1, 3 Tier-2, 11 BULL/1 NEUT/1 BEAR
+- 上周准确率仅 27.3% (3/11) — 需在HTML中诚实报告
+
+## A: 生成预测 HTML
+
+读取 output/weekly_prediction.json，生成完整HTML预测页面。必须包含：
+
+1. 上周总结板块：读取 output/archive/2026-07-05/weekly_prediction.json，对比上周预测方向 vs 本周实际走势，统计Tier1/Tier2方向正确率，诚实报告27.3%
+
+2. 上月总结板块：读取 output/archive/2026-06-14/，对比月度预测正确率
+
+3. 本周预测板块（第29周）：
+   - EPU区域(US EPU 350, P99, NORMAL)
+   - Tier1表 10个市场: 信号/预期收益/置信度/趋势σ/反转σ/YTD/周变/诊断/数据至
+   - Tier2表 3个市场: 意大利MIB/中国A股/巴西Bovespa
+   - 恒生指数NEUT特殊标识，A股标注仅供参考
+   - 本周关键判断：11 BULL全球共识、KOSPI过热警告
+   - YTD表现对比柱状图(纯CSS)
+   - 底部模型说明+周期标注
+
+样式: 暗色主题 #0a0a0f，导航栏 首页/时频技术/AI前沿/科学探索/财经情报/全球预测
+BULL=#4caf50▲ BEAR=#f44336▼ NEUT=#888─
+参考 output/prediction202628.html 的风格结构
+
+输出:
+- output/prediction.html (覆盖)
+- output/prediction202629.html (存档)
+
+## B: 部署到 gingerfamily.cn
+
+1. 在 timefreq 启动 HTTP server:
+   cd /data/global-economy-lab/output && python3 -m http.server 8085 --bind 127.0.0.1 &
+
+2. SSH ubuntu@106.54.5.160 执行:
+   wget -q http://127.0.0.1:8084/prediction.html -O /var/www/gingerfamily/prediction.html
+   (如果8084不可达，用其他方式传文件)
+
+3. 验证 https://gingerfamily.cn/prediction.html
+
+4. 关闭HTTP server
+
+## C: Git提交
+- git add output/prediction*.html output/weekly_prediction.json output/archive/
+- git commit -m "W29 weekly prediction HTML + archive"
+- git push origin main
+
+## 约束
+- 不删除任何历史数据
+- 诚实报告准确率
+- 自动执行所有步骤
