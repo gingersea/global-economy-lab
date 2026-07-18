@@ -308,7 +308,7 @@ def compute_actual_accuracy(predictions, prior_json_path: Path, today: date):
 
 # ── Prediction ───────────────────────────────────────────────
 def run_predictions(vix_series=None):
-    """Returns (predictions_list, epu_values, is_high_epu, vix_info)."""
+    """Returns (predictions_list, epu_values, is_high_epu, vix_info, epu_percentile, predictor)."""
     prices = load_prices()
     epu_a = load_epu()
     china_epu_a = load_china_epu()
@@ -347,6 +347,19 @@ def run_predictions(vix_series=None):
             "active": predictor._vix_active,
         }
 
+    # Load sentiment/flow data (graceful — continues on failure)
+    sentiment_dir = "N/A"
+    try:
+        from src.data_fetcher.sentiment import get_put_call_ratio, get_treasury_spread
+        pcr_df = get_put_call_ratio(start_date="2000-01-01")
+        spread_df = get_treasury_spread(start_date="2000-01-01")
+        predictor.fit_sentiment(pcr_df=pcr_df, spread_df=spread_df)
+        if predictor._sentiment_active:
+            _, sentiment_dir = predictor._compute_sentiment_factor()
+            logger.info(f"Sentiment factor: {sentiment_dir}")
+    except Exception as e:
+        logger.warning(f"Sentiment loading skipped: {e}")
+
     # Set per-market parameters
     for market, params in MARKET_PARAMS.items():
         predictor.set_market_params(market, **params)
@@ -372,6 +385,25 @@ def run_predictions(vix_series=None):
         prices, epu_now,
         epu_values={"us": epu_now, "china": china_epu_now},
     )
+
+    # Compute rolling 5-year backtest for each market
+    for p in predictions:
+        px = prices.get(p.market)
+        if px is not None:
+            try:
+                epu_label = MARKET_PARAMS.get(p.market, {}).get("epu_label", "us")
+                epu_data = china_epu_a if epu_label == "china" else epu_a
+                roll_acc = predictor.compute_rolling_backtest(
+                    p.market, px, epu_data, window_years=5
+                )
+                p.rolling_accuracy = roll_acc
+            except Exception as e:
+                logger.debug(f"  rolling_accuracy {p.market}: {e}")
+
+    # Attach sentiment factor direction to each prediction
+    for p in predictions:
+        p.sentiment_factor = sentiment_dir
+
     # Use VIX regime if active, otherwise use EPU regime
     if predictor._vix_active and predictor._vix_now is not None:
         is_high = predictor._vix_now > predictor._vix_p80
@@ -401,6 +433,11 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
             last_date = str(p.price_date) if p.price_date else ""
 
         overheat = getattr(p, 'overheat', False)
+        flat_market = getattr(p, 'flat_market', False)
+        vix_epu_conflict = getattr(p, 'vix_epu_conflict', False)
+        low_confidence = getattr(p, 'low_confidence', False)
+        rolling_acc = getattr(p, 'rolling_accuracy', None)
+        sentiment_factor = getattr(p, 'sentiment_factor', 'N/A')
         group = "EM" if p.market in EMERGING_MARKETS else "DM"
 
         return {
@@ -417,13 +454,24 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
             "regime": getattr(p, 'regime', 'normal'),
             "last_date": last_date,
             "overheat": overheat,
+            "flat_market": flat_market,
+            "vix_epu_conflict": vix_epu_conflict,
+            "low_confidence": low_confidence,
+            "rolling_accuracy": rolling_acc,
+            "sentiment_factor": sentiment_factor,
             "group": group,
+            "regime_distance": round(float(p.regime_distance), 2) if getattr(p, 'regime_distance', None) is not None else None,
+            "regime_shift": getattr(p, 'regime_shift', False),
+            "regime_unfamiliar": getattr(p, 'regime_unfamiliar', False),
         }
 
     # Count signals
     bulls = sum(1 for p in predictions if p.tier in (1, 2) and p.signal > 0)
     bears = sum(1 for p in predictions if p.tier in (1, 2) and p.signal < 0)
     neuts = sum(1 for p in predictions if p.tier in (1, 2) and p.signal == 0)
+
+    regime_shifted = sum(1 for p in predictions if getattr(p, 'regime_shift', False))
+    regime_warned = sum(1 for p in predictions if getattr(p, 'regime_unfamiliar', False))
 
     result = {
         "generated": gen_time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
@@ -445,6 +493,8 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
         "tier1_count": len(tier1),
         "tier2_count": len(tier2),
         "signal_distribution": {"BULL": bulls, "BEAR": bears, "NEUT": neuts},
+        "regime_shifted_count": regime_shifted,
+        "regime_warned_count": regime_warned,
         "actual_accuracy": actual_accuracy,
         "markets": [_market(p) for p in predictions if p.tier in (1, 2)],
     }
@@ -524,7 +574,7 @@ def build_page(title, body, extra_css=""):
 </body></html>"""
 
 
-def _signal_html(signal_str, overheat=False):
+def _signal_html(signal_str, overheat=False, low_confidence=False):
     if overheat:
         if signal_str == "BEAR":
             return '<span class="signal-overheat">▼ BEAR (过热)</span>'
@@ -533,6 +583,8 @@ def _signal_html(signal_str, overheat=False):
         return '<span class="signal-bull">▲ BULL</span>'
     elif signal_str == "BEAR":
         return '<span class="signal-bear">▼ BEAR</span>'
+    elif low_confidence:
+        return '<span class="signal-neut" style="font-style:italic;color:#888">─ NEUT <span style="font-size:10px;color:#666">低信念</span></span>'
     else:
         return '<span class="signal-neut">─ NEUT</span>'
 
@@ -574,16 +626,55 @@ def build_prediction_html(data, week_info):
     # Market table rows
     def market_row(m):
         overheat = m.get("overheat", False)
+        low_conf = m.get("low_confidence", False)
+        regime_shift = m.get("regime_shift", False)
+        regime_unfamiliar = m.get("regime_unfamiliar", False)
+        roll5y = m.get("rolling_accuracy")
+        full_acc = m.get("accuracy", 0)
+        if roll5y is not None:
+            degraded = roll5y < full_acc * 0.7
+            r5_color = "#ff9800" if degraded else "#888"
+            r5_style = "font-weight:700" if degraded else ""
+            r5_cell = f'<span style="color:{r5_color};{r5_style}">{roll5y:.1%}</span>'
+        else:
+            r5_cell = '<span style="color:#555">N/A</span>'
+        # Regime distance cell
+        rd = m.get("regime_distance")
+        if rd is not None:
+            if regime_shift:
+                rd_html = f'<span style="color:#f44336;font-weight:700">{rd:.1f} 🔴</span>'
+            elif regime_unfamiliar:
+                rd_html = f'<span style="color:#ff9800;font-weight:700">{rd:.1f} ⚠</span>'
+            else:
+                rd_html = f'<span style="color:#666">{rd:.1f}</span>'
+        else:
+            rd_html = '<span style="color:#555">-</span>'
+        sent = m.get("sentiment_factor", "N/A")
+        if sent == "BULLISH":
+            sent_cell = '<span style="color:#4caf50;font-size:10px">↗</span>'
+        elif sent == "BEARISH":
+            sent_cell = '<span style="color:#f44336;font-size:10px">↘</span>'
+        elif sent == "NEUTRAL":
+            sent_cell = '<span style="color:#888;font-size:10px">─</span>'
+        else:
+            sent_cell = '<span style="color:#555;font-size:10px">N/A</span>'
+        # Signal rendering with regime_shift
+        sig_html = _signal_html(m["signal"], overheat, low_conf)
+        if regime_shift:
+            sig_html = '<span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span>'
         return (
             f'<tr>'
             f'<td style="padding:6px 8px;font-size:13px">{_tier_badge(m["tier"])}'
             f'{_group_badge(m.get("group","DM"))} {m["name_cn"]}</td>'
-            f'<td style="padding:6px 8px">{_signal_html(m["signal"], overheat)}</td>'
+            f'<td style="padding:6px 8px">{sig_html}</td>'
             f'<td style="padding:6px 8px;text-align:right">{_ret_color(m["pred_ret"])}</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m["accuracy"]:.1%}</td>'
+            f'<td style="padding:6px 8px;text-align:right;font-size:11px">{r5_cell}</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m["tm_z"]:+.2f}σ</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m["mr_z"]:+.2f}σ</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m.get("vr_z",0):+.2f}σ</td>'
+            f'<td style="padding:6px 8px;text-align:right;font-size:12px">{rd_html}</td>'
+            f'<td style="padding:6px 8px;text-align:center">{sent_cell}</td>'
             f'<td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{m.get("detail","")}">{m.get("detail","")}</td>'
             f'</tr>'
         )
@@ -601,8 +692,8 @@ def build_prediction_html(data, week_info):
         <table class="predict-table">
             <thead><tr>
                 <th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th>
-                <th style="text-align:right">准确率</th><th style="text-align:right">趋势(σ)</th>
-                <th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th>详情</th>
+                <th style="text-align:right">准确率</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th>
+                <th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
             </tr></thead>
             <tbody>{hk_rows}</tbody>
         </table>
@@ -678,15 +769,16 @@ def build_prediction_html(data, week_info):
     {hk_html}
 
     <h3 style="font-size:15px;color:#4caf50;margin-bottom:16px;">★★★ Tier 1 — 高置信度 (≥70%)</h3>
+    <p style="font-size:11px;color:#666;margin-top:-8px;margin-bottom:8px">回测=全量历史 | 5年=近5年滚动</p>
     <table class="predict-table">
         <thead><tr>
             <th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th>
-            <th style="text-align:right">准确率</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th>详情</th>
+            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
         </tr></thead>
         <tbody>{tier1_rows}</tbody>
     </table>
 
-    {'<h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70%)</h3><table class="predict-table"><thead><tr><th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th><th style="text-align:right">准确率</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th>详情</th></tr></thead><tbody>' + tier2_rows + '</tbody></table>' if tier2_rows else ''}
+    {'<h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70%)</h3><table class="predict-table"><thead><tr><th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th><th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th></tr></thead><tbody>' + tier2_rows + '</tbody></table>' if tier2_rows else ''}
 
     <div class="insight-box" style="margin-top:32px">
         <p>💡 <strong>模型说明：</strong>3-factor (趋势+回归+波动率) 线性模型 + 分市场制度切换 (EM P65 / DM P75)。
@@ -736,12 +828,23 @@ def build_market_section_html(data, week_info):
     # Market table rows (compact)
     def compact_row(m):
         overheat = m.get("overheat", False)
+        low_conf = m.get("low_confidence", False)
+        roll5y = m.get("rolling_accuracy")
+        full_acc = m.get("accuracy", 0)
+        if roll5y is not None:
+            degraded = roll5y < full_acc * 0.7
+            r5c = "#ff9800" if degraded else "#888"
+            r5s = "font-weight:700;" if degraded else ""
+            r5_cell = f'<span style="color:{r5c};{r5s}">{roll5y:.1%}</span>'
+        else:
+            r5_cell = '<span style="color:#555">N/A</span>'
         return (
             f'<tr>'
             f'<td style="padding:6px 8px;font-size:13px">{_group_badge(m.get("group","DM"))} {m["name_cn"]}</td>'
-            f'<td style="padding:6px 8px">{_signal_html(m["signal"], overheat)}</td>'
+            f'<td style="padding:6px 8px">{_signal_html(m["signal"], overheat, low_conf)}</td>'
             f'<td style="padding:6px 8px;text-align:right">{_ret_color(m["pred_ret"])}</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m["accuracy"]:.1%}</td>'
+            f'<td style="padding:6px 8px;text-align:right;font-size:11px">{r5_cell}</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:10px;color:#555;font-family:monospace">{m.get("last_date","")[:10]}</td>'
             f'</tr>'
         )
@@ -793,7 +896,8 @@ def build_market_section_html(data, week_info):
                     <th style="text-align:left;padding:6px 8px;color:#888;font-size:10px">市场</th>
                     <th style="text-align:left;padding:6px 8px;color:#888;font-size:10px">信号</th>
                     <th style="text-align:right;padding:6px 8px;color:#888;font-size:10px">预测年收益</th>
-                    <th style="text-align:right;padding:6px 8px;color:#888;font-size:10px">准确率</th>
+                    <th style="text-align:right;padding:6px 8px;color:#888;font-size:10px">回测</th>
+                    <th style="text-align:right;padding:6px 8px;color:#888;font-size:10px">5年</th>
                     <th style="text-align:right;padding:6px 8px;color:#888;font-size:10px">数据至</th>
                 </tr></thead>
                 <tbody>{all_rows}</tbody>
@@ -902,15 +1006,58 @@ def main():
         if vix_info and vix_info["current"]:
             logger.info(f"  VIX: {vix_info['current']:.1f} (5d: {vix_info.get('trend_5d',0):+.1%})")
         logger.info(f"  Signals: {sdist.get('BULL',0)} BULL / {sdist.get('NEUT',0)} NEUT / {sdist.get('BEAR',0)} BEAR")
+        flat_count = sum(1 for m in data["markets"] if m.get("flat_market"))
+        conflict_count = sum(1 for m in data["markets"] if m.get("vix_epu_conflict"))
+        overheat_count = sum(1 for m in data["markets"] if m.get("overheat"))
+        low_conf_count = sum(1 for m in data["markets"] if m.get("low_confidence"))
+        regime_shifted = data.get("regime_shifted_count", 0)
+        regime_warned = data.get("regime_warned_count", 0)
+        if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted or regime_warned:
+            parts = []
+            if overheat_count:
+                parts.append(f"过热:{overheat_count}")
+            if flat_count:
+                parts.append(f"平盘→NEUT:{flat_count}")
+            if conflict_count:
+                parts.append(f"VIX-EPU冲突:{conflict_count}")
+            if low_conf_count:
+                parts.append(f"低信念→NEUT:{low_conf_count}")
+            if regime_shifted:
+                parts.append(f"制度偏离强制NEUT:{regime_shifted}")
+            if regime_warned:
+                parts.append(f"陌生制度:{regime_warned}")
+            logger.info(f"  Overrides: {' | '.join(parts)}")
         logger.info(f"  Tier 1 (≥70%): {len(tier1)} markets")
         for m in tier1:
-            oh = " [过热]" if m.get("overheat") else ""
-            logger.info(f"    {m['name_cn']:12s} {m['signal']:5s}{oh:6s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
+            tags = []
+            if m.get("overheat"):
+                tags.append("过热")
+            if m.get("flat_market"):
+                tags.append("平盘→NEUT")
+            if m.get("vix_epu_conflict"):
+                tags.append("VIX-EPU冲突")
+            if m.get("regime_shift"):
+                tags.append("制度偏离NEUT")
+            elif m.get("regime_unfamiliar"):
+                tags.append("陌生制度")
+            tag_str = f" [{'|'.join(tags)}]" if tags else ""
+            logger.info(f"    {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
         if tier2:
             logger.info(f"  Tier 2 (55-70%): {len(tier2)} markets")
             for m in tier2:
-                oh = " [过热]" if m.get("overheat") else ""
-                logger.info(f"    {m['name_cn']:12s} {m['signal']:5s}{oh:6s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
+                tags = []
+                if m.get("overheat"):
+                    tags.append("过热")
+                if m.get("flat_market"):
+                    tags.append("平盘→NEUT")
+                if m.get("vix_epu_conflict"):
+                    tags.append("VIX-EPU冲突")
+                if m.get("regime_shift"):
+                    tags.append("制度偏离NEUT")
+                elif m.get("regime_unfamiliar"):
+                    tags.append("陌生制度")
+                tag_str = f" [{'|'.join(tags)}]" if tags else ""
+                logger.info(f"    {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
         if actual_accuracy.get("hit_rate") is not None:
             logger.info(f"  Actual accuracy (prior week): {actual_accuracy['hit_rate']:.1%} ({actual_accuracy['hits']}/{actual_accuracy['total_scored']})")
         logger.info(f"\n  Output: {output_dir}")
@@ -971,15 +1118,58 @@ def main():
     logger.info(f"  Signals: {sdist.get('BULL',0)} BULL / {sdist.get('NEUT',0)} NEUT / {sdist.get('BEAR',0)} BEAR")
     if china_epu_val != epu_val:
         logger.info(f"  China EPU: {china_epu_val:.0f} (HK uses for regime)")
+    flat_count = sum(1 for m in data["markets"] if m.get("flat_market"))
+    conflict_count = sum(1 for m in data["markets"] if m.get("vix_epu_conflict"))
+    overheat_count = sum(1 for m in data["markets"] if m.get("overheat"))
+    low_conf_count = sum(1 for m in data["markets"] if m.get("low_confidence"))
+    regime_shifted_sum = data.get("regime_shifted_count", 0)
+    regime_warned_sum = data.get("regime_warned_count", 0)
+    if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted_sum or regime_warned_sum:
+        parts = []
+        if overheat_count:
+            parts.append(f"过热:{overheat_count}")
+        if flat_count:
+            parts.append(f"平盘→NEUT:{flat_count}")
+        if conflict_count:
+            parts.append(f"VIX-EPU冲突:{conflict_count}")
+        if low_conf_count:
+            parts.append(f"低信念→NEUT:{low_conf_count}")
+        if regime_shifted_sum:
+            parts.append(f"制度偏离强制NEUT:{regime_shifted_sum}")
+        if regime_warned_sum:
+            parts.append(f"陌生制度:{regime_warned_sum}")
+        logger.info(f"  Overrides: {' | '.join(parts)}")
     logger.info(f"  Tier 1 (≥70%): {len(tier1)} markets")
     for m in tier1:
-        oh = " [过热]" if m.get("overheat") else ""
-        logger.info(f"    [{m.get('group','DM')}] {m['name_cn']:12s} {m['signal']:5s}{oh:6s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
+        tags = []
+        if m.get("overheat"):
+            tags.append("过热")
+        if m.get("flat_market"):
+            tags.append("平盘→NEUT")
+        if m.get("vix_epu_conflict"):
+            tags.append("VIX-EPU冲突")
+        if m.get("regime_shift"):
+            tags.append("制度偏离NEUT")
+        elif m.get("regime_unfamiliar"):
+            tags.append("陌生制度")
+        tag_str = f" [{'|'.join(tags)}]" if tags else ""
+        logger.info(f"    [{m.get('group','DM')}] {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
     if tier2:
         logger.info(f"  Tier 2 (55-70%): {len(tier2)} markets")
         for m in tier2:
-            oh = " [过热]" if m.get("overheat") else ""
-            logger.info(f"    [{m.get('group','DM')}] {m['name_cn']:12s} {m['signal']:5s}{oh:6s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
+            tags = []
+            if m.get("overheat"):
+                tags.append("过热")
+            if m.get("flat_market"):
+                tags.append("平盘→NEUT")
+            if m.get("vix_epu_conflict"):
+                tags.append("VIX-EPU冲突")
+            if m.get("regime_shift"):
+                tags.append("制度偏离NEUT")
+            elif m.get("regime_unfamiliar"):
+                tags.append("陌生制度")
+            tag_str = f" [{'|'.join(tags)}]" if tags else ""
+            logger.info(f"    [{m.get('group','DM')}] {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
     if actual_accuracy.get("hit_rate") is not None:
         logger.info(f"  Actual accuracy (prior week): {actual_accuracy['hit_rate']:.1%} ({actual_accuracy['hits']}/{actual_accuracy['total_scored']})")
     logger.info(f"\n  Output: {output_dir}")

@@ -57,6 +57,21 @@ GROUP_EPU_THRESHOLDS = {
 OVERHEAT_NEUT_THRESHOLD = 2.5   # factor > +2.5σ → force NEUT
 OVERHEAT_BEAR_THRESHOLD = 3.5   # factor > +3.5σ → force BEAR
 
+# Flat market threshold (P0: 2026W29)
+FLAT_MARKET_THRESHOLD = 0.005   # |10d return| < 0.5% → force NEUT
+
+# Low-conviction thresholds (P1: 2026W30)
+# When predicted return magnitude and all factor z-scores are
+# below these thresholds, BULL/BEAR → NEUT (signal quality gating).
+LOW_CONVICTION_RET_THRESHOLD = 0.003   # |pred_ret| < 0.3% → low conviction
+LOW_CONVICTION_Z_THRESHOLD = 1.0       # all |z-score| < 1.0 → no clear signal
+
+# Regime (regime) detection via Mahalanobis distance (P3: 2026W30)
+# Measures how far current 3-factor vector is from training distribution.
+# Larger distance → more unfamiliar regime → lower confidence / force NEUT.
+REGIME_DISTANCE_WARN = 1.5    # D > 1.5 → lower confidence, mark "unfamiliar regime"
+REGIME_DISTANCE_NEUT = 2.5    # D > 2.5 → force NEUT, mark "extreme regime shift"
+
 
 def _market_group(market: str) -> str:
     """Return 'emerging' or 'developed' for a given market code."""
@@ -90,6 +105,13 @@ class MarketPrediction:
     factors: Dict[str, float] = field(default_factory=dict)
     detail: str = ""
     overheat: bool = False
+    flat_market: bool = False
+    vix_epu_conflict: bool = False
+    low_confidence: bool = False
+    rolling_accuracy: Optional[float] = None
+    regime_distance: Optional[float] = None
+    regime_shift: bool = False
+    regime_unfamiliar: bool = False
 
 
 class HighConfidencePredictor:
@@ -131,6 +153,15 @@ class HighConfidencePredictor:
         self._vix_trend_5d: Optional[float] = None   # 5-day change (fraction)
         self._vix_trend_20d: Optional[float] = None  # 20-day change (fraction)
         self._vix_active: bool = False
+        # Sentiment / flow factor (P2: 2026W30)
+        self._pcr_history: Optional[pd.Series] = None   # put/call ratio daily series
+        self._spread_history: Optional[pd.Series] = None  # 10Y-2Y spread daily series
+        self._pcr_p80: Optional[float] = None
+        self._pcr_p20: Optional[float] = None
+        self._sentiment_active: bool = False
+        # Regime detection (P3: 2026W30)
+        self._factor_means: Dict[str, np.ndarray] = {}   # market → (3,) mean vector
+        self._factor_cov: Dict[str, np.ndarray] = {}      # market → (3,3) covariance
 
     # ── EPU / VIX fitting ───────────────────────────────────────
     def fit_epu(self, epu_annual: pd.Series, label: str = "us"):
@@ -177,6 +208,98 @@ class HighConfidencePredictor:
             f"P20={self._vix_p20:.1f} 5d={self._vix_trend_5d:+.1%} 20d={self._vix_trend_20d:+.1%}"
         )
 
+    def fit_sentiment(self, pcr_df: pd.DataFrame = None, spread_df: pd.DataFrame = None):
+        """Fit sentiment/flow data as optional 4th factor.
+
+        Args:
+            pcr_df:    DataFrame with 'put_call_ratio' column, date-indexed.
+            spread_df: DataFrame with 'spread_10y2y' column, date-indexed.
+        """
+        active = False
+
+        if pcr_df is not None and not pcr_df.empty:
+            try:
+                pcr_vals = pcr_df["put_call_ratio"].dropna()
+                if len(pcr_vals) >= 252:
+                    self._pcr_history = pcr_vals
+                    self._pcr_p80 = float(np.percentile(pcr_vals, 80))
+                    self._pcr_p20 = float(np.percentile(pcr_vals, 20))
+                    active = True
+                    current_pcr = float(pcr_vals.iloc[-1])
+                    logger.info(
+                        f"Sentiment PCR fitted: now={current_pcr:.3f} "
+                        f"P80={self._pcr_p80:.3f} P20={self._pcr_p20:.3f}"
+                    )
+            except Exception as exc:
+                logger.warning(f"Sentiment PCR fit failed: {exc}")
+
+        if spread_df is not None and not spread_df.empty:
+            try:
+                spread_vals = spread_df["spread_10y2y"].dropna()
+                if len(spread_vals) >= 252:
+                    self._spread_history = spread_vals
+                    active = True
+                    current_spread = float(spread_vals.iloc[-1])
+                    logger.info(
+                        f"Sentiment spread fitted: now={current_spread:+.3%}"
+                    )
+            except Exception as exc:
+                logger.warning(f"Sentiment spread fit failed: {exc}")
+
+        self._sentiment_active = active
+        if active:
+            logger.info("Sentiment/flow factor ACTIVE")
+        else:
+            logger.info("Sentiment/flow factor NOT active (insufficient data)")
+
+    def _compute_sentiment_factor(self) -> Tuple[float, str]:
+        """Compute sentiment/flow z-score from PCR and yield spread.
+
+        Returns (z_score, direction_label).
+          direction_label: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+          z_score > 0 → bullish tailwind, z_score < 0 → bearish headwind
+
+        If sentiment data is inactive or unavailable, returns (0.0, 'N/A').
+        """
+        if not self._sentiment_active:
+            return 0.0, "N/A"
+
+        signals = []
+
+        # Put/call ratio signal
+        if self._pcr_history is not None and self._pcr_p80 is not None:
+            current_pcr = float(self._pcr_history.iloc[-1])
+            if current_pcr > self._pcr_p80:
+                signals.append(-1.0)  # High PCR = fear = bearish
+            elif current_pcr < self._pcr_p20:
+                signals.append(1.0)   # Low PCR = greed = bullish
+            else:
+                signals.append(0.0)
+
+        # Yield spread signal
+        if self._spread_history is not None:
+            current_spread = float(self._spread_history.iloc[-1])
+            if current_spread < 0:
+                signals.append(-1.0)  # Inverted = recession signal = bearish
+            elif current_spread > 0.015:  # > 1.5% = steep = growth signal
+                signals.append(1.0)       # Normal steep curve = bullish
+            else:
+                signals.append(0.0)
+
+        if not signals:
+            return 0.0, "N/A"
+
+        z_score = float(np.mean(signals))  # -1 to +1 scale
+
+        if z_score > 0.2:
+            direction = "BULLISH"
+        elif z_score < -0.2:
+            direction = "BEARISH"
+        else:
+            direction = "NEUTRAL"
+
+        return z_score, direction
+
     # ── Market config ───────────────────────────────────────────
     def set_market_params(
         self,
@@ -213,40 +336,60 @@ class HighConfidencePredictor:
             return False
         return epu_value > self._epu_threshold[label]
 
-    def _get_regime(self, market: str, epu_value: float, epu_label: str) -> Tuple[str, str]:
+    def _get_regime(self, market: str, epu_value: float, epu_label: str) -> Tuple[str, str, bool]:
         """Determine regime for a market, considering EPU + VIX.
 
-        Returns (regime_key, source) where:
-          regime_key: 'high_epu', 'normal', 'high_epu_china', 'normal_china'
-          source: 'epu', 'vix', 'vix+epu'
+        Returns (regime_key, source, conflict) where:
+          regime_key: 'high_epu', 'normal', 'high_epu_vix', etc.
+          source: 'epu', 'vix', 'vix_rising', 'vix_low', 'epu+matched'
+          conflict: True when VIX and EPU disagree on regime direction
+                    (VIX > P80 but EPU normal, or VIX < P20 but EPU high).
+                    When True, the caller should downgrade to NEUT for safety.
         """
         is_high = self._is_high_epu(epu_value, epu_label)
         base = f"high_epu_{epu_label}" if (is_high and epu_label != "us") else \
                "high_epu" if is_high else \
                f"normal_{epu_label}" if epu_label != "us" else "normal"
 
+        conflict = False
+
         # VIX override if available: VIX > P80 = high uncertainty
         if self._vix_active and self._vix_now is not None:
-            if self._vix_now > self._vix_p80:
-                # VIX says high uncertainty — override EPU
-                # Use VIX trend to determine if uncertainty is accelerating or fading
+            vix_says_high = self._vix_now > self._vix_p80
+            vix_says_low = self._vix_now < self._vix_p20
+
+            if vix_says_high:
+                # VIX says high uncertainty
                 if self._vix_trend_5d is not None and self._vix_trend_5d > 0.05:
                     regime_key = "high_epu_vix_rising"
                     source = "vix_rising"
                 else:
                     regime_key = "high_epu_vix"
                     source = "vix"
-            elif self._vix_now < self._vix_p20 and not is_high:
-                regime_key = "normal_vix"
-                source = "vix_low"
+                # P1: Conflict check — VIX says high but EPU says normal
+                if not is_high:
+                    conflict = True
+            elif vix_says_low:
+                # P1: Conflict check — VIX says low but EPU says high
+                if is_high:
+                    conflict = True
+                    regime_key = base  # use EPU regime for model selection
+                    source = "epu"
+                else:
+                    regime_key = "normal_vix"
+                    source = "vix_low"
             else:
+                # VIX in middle zone — trust EPU
                 regime_key = base
-                source = "epu+matched" if is_high == (self._vix_now > self._vix_p80) else "epu"
+                if is_high == vix_says_high:
+                    source = "epu+matched"
+                else:
+                    source = "epu"
         else:
             regime_key = base
             source = "epu"
 
-        return regime_key, source
+        return regime_key, source, conflict
 
     # ── Model fitting ───────────────────────────────────────────
     def fit_market(
@@ -387,6 +530,12 @@ class HighConfidencePredictor:
             "group": _market_group(market),
             "group_pct": group_pct,
         }
+        # Store training factor distribution for regime distance detection
+        X_train = np.column_stack([tm_v, mr_v, vr_v])
+        self._factor_means[market] = X_train.mean(axis=0)
+        cov = np.cov(X_train.T)
+        cov += 1e-6 * np.eye(3)  # regularization for numerical stability
+        self._factor_cov[market] = cov
         self._models[market] = result
         return result
 
@@ -433,6 +582,74 @@ class HighConfidencePredictor:
 
         return False, None, ""
 
+    # ── Flat market check (P0: 2026W29) ─────────────────────────
+    def _check_flat_market(self, prices: pd.Series) -> Tuple[bool, str]:
+        """Check if the market has been effectively flat recently.
+
+        When |10-day return| < FLAT_MARKET_THRESHOLD, the market shows
+        negligible directional movement.  BULL/BEAR signals in such
+        conditions are noise rather than actionable predictions.
+
+        Returns (is_flat, reason).
+        """
+        if prices is None or len(prices) < 11:
+            return False, ""
+        recent_ret = float(prices.iloc[-1] / prices.iloc[-11] - 1)
+        if abs(recent_ret) < FLAT_MARKET_THRESHOLD:
+            return True, f"平盘 (|10d ret|={recent_ret:.2%} < {FLAT_MARKET_THRESHOLD:.1%}) → NEUT"
+        return False, ""
+
+    def _check_low_conviction(
+        self, pred_ret: float, factors: Dict[str, float], signal: int, market: str
+    ) -> Tuple[int, bool]:
+        """Override BULL/BEAR → NEUT when conviction is too weak.
+
+        Triggered when |pred_ret| < LOW_CONVICTION_RET_THRESHOLD AND
+        all |z-scores| < LOW_CONVICTION_Z_THRESHOLD AND signal is not
+        already NEUT.
+
+        Returns (new_signal, triggered).
+        """
+        if signal == 0:
+            return signal, False
+
+        max_z = max(abs(factors.get("tm_z", 0)),
+                    abs(factors.get("mr_z", 0)),
+                    abs(factors.get("vr_z", 0)))
+
+        if abs(pred_ret) < LOW_CONVICTION_RET_THRESHOLD and max_z < LOW_CONVICTION_Z_THRESHOLD:
+            sig_label = "BULL" if signal > 0 else "BEAR"
+            logger.info(
+                f"  {market}: low-conviction override ({sig_label} → NEUT) "
+                f"— |ret|={pred_ret:.3%} all |z|<{LOW_CONVICTION_Z_THRESHOLD}"
+            )
+            return 0, True
+
+        return signal, False
+
+    def compute_regime_distance(
+        self, market: str, tm: float, mr: float, vr: float
+    ) -> Optional[float]:
+        """Mahalanobis distance of current factors from training distribution.
+
+        Returns None if training distribution is unavailable for this market.
+        Falls back to normalized Euclidean distance if covariance is singular.
+        """
+        if market not in self._factor_means or market not in self._factor_cov:
+            return None
+        mean = self._factor_means[market]
+        cov = self._factor_cov[market]
+        point = np.array([tm, mr, vr])
+        diff = point - mean
+        try:
+            inv_cov = np.linalg.inv(cov)
+            D2 = diff @ inv_cov @ diff
+            return float(np.sqrt(max(D2, 0)))
+        except np.linalg.LinAlgError:
+            std = np.sqrt(np.diag(cov))
+            std[std < 1e-10] = 1.0
+            return float(np.sqrt(np.sum((diff / std) ** 2)) / np.sqrt(3))
+
     # ── Prediction ──────────────────────────────────────────────
     def predict(
         self,
@@ -455,7 +672,7 @@ class HighConfidencePredictor:
 
         cfg = self._models[market]
         epu_label = self._market_epu_label.get(market, "us")
-        regime_key, regime_source = self._get_regime(market, epu_value, epu_label)
+        regime_key, regime_source, vix_epu_conflict = self._get_regime(market, epu_value, epu_label)
 
         # Map vix-based regimes back to model regime keys
         model_regime = "high_epu" if "high_epu" in regime_key else "normal"
@@ -505,6 +722,51 @@ class HighConfidencePredictor:
             "vr": round(vr_now, 4), "vr_z": round(vr_z, 2),
         }
 
+        # ── Regime (regime) distance check (P3: 2026W30) ──
+        regime_dist = self.compute_regime_distance(market, tm_now, mr_now, vr_now)
+        regime_shift = False
+        regime_unfamiliar = False
+        confidence = cfg["accuracy"]
+
+        if regime_dist is not None and regime_dist > REGIME_DISTANCE_NEUT:
+            regime_shift = True
+            logger.info(
+                f"  {market}: regime shift (D={regime_dist:.1f} > "
+                f"{REGIME_DISTANCE_NEUT}) — forcing NEUT"
+            )
+            detail_parts = [f"⚠ 制度极端偏离(D={regime_dist:.1f}σ)→NEUT"]
+            # Build regime description for detail
+            if "vix_rising" in regime_key:
+                detail_parts.append("VIX急升→不确定性加剧")
+            elif "vix" in regime_key:
+                detail_parts.append("VIX高位→高不确定")
+            elif "high_epu" in regime_key:
+                epu_src = "中EPU高" if epu_label == "china" else "EPU高"
+                detail_parts.append(f"{epu_src}→高政策不确定性")
+            else:
+                epu_src = "中EPU正常" if epu_label == "china" else "EPU正常"
+                detail_parts.append(f"{epu_src}→均值回归模式")
+            return MarketPrediction(
+                market=market,
+                signal=0,
+                expected_ret=round(float(pred), 4),
+                confidence=round(confidence, 4),
+                tier=tier,
+                regime=f"{regime_key}_{epu_label}" if (epu_label != "us" and regime_key not in ("normal", "high_epu")) else regime_key,
+                factors=factors,
+                detail=" | ".join(detail_parts),
+                regime_distance=regime_dist,
+                regime_shift=True,
+                regime_unfamiliar=False,
+            )
+        elif regime_dist is not None and regime_dist > REGIME_DISTANCE_WARN:
+            regime_unfamiliar = True
+            confidence = confidence * (REGIME_DISTANCE_WARN / regime_dist)
+            logger.info(
+                f"  {market}: unfamiliar regime (D={regime_dist:.1f}) — "
+                f"confidence: {cfg['accuracy']:.0%} → {confidence:.0%}"
+            )
+
         # ── Overheat check (overrides model signal) ──────────
         overheated, over_signal, over_reason = self._check_overheat(factors)
         if overheated:
@@ -516,10 +778,66 @@ class HighConfidencePredictor:
                 f"{['BEAR','NEUT','BULL'][signal + 1]}) — {over_reason}"
             )
 
+        # ── P1: VIX-EPU conflict check (overrides to NEUT) ────
+        conflict_override = False
+        if vix_epu_conflict and signal != 0:
+            original_signal = signal
+            signal = 0
+            conflict_override = True
+            logger.info(
+                f"  {market}: VIX-EPU conflict override "
+                f"({['BEAR','NEUT','BULL'][original_signal + 1]} → NEUT) — "
+                f"VIX={self._vix_now:.1f} vs EPU={epu_value:.0f} disagree"
+            )
+
+        # ── P0: Flat market check (overrides BULL/BEAR to NEUT) ──
+        flat_market = False
+        if not overheated and not conflict_override and signal != 0:
+            is_flat, flat_reason = self._check_flat_market(prices)
+            if is_flat:
+                original_signal = signal
+                signal = 0
+                flat_market = True
+                logger.info(
+                    f"  {market}: flat market override "
+                    f"({['BEAR','NEUT','BULL'][original_signal + 1]} → NEUT) — {flat_reason}"
+                )
+
+        # ── Sentiment/flow regulator (4th factor) ────────────
+        sentiment_direction = "N/A"
+        sentiment_overridden = False
+        if self._sentiment_active and signal != 0:
+            sz, sd = self._compute_sentiment_factor()
+            sentiment_direction = sd
+            model_dir = 1 if signal > 0 else -1
+            sent_dir = 1 if sz > 0.2 else (-1 if sz < -0.2 else 0)
+            if sent_dir != 0 and sent_dir != model_dir:
+                original_signal = signal
+                signal = 0
+                sentiment_overridden = True
+                logger.info(
+                    f"  {market}: sentiment regulator override "
+                    f"({['BEAR','NEUT','BULL'][original_signal + 1]} → NEUT) — "
+                    f"sentiment={sd} vs model={'BULL' if model_dir > 0 else 'BEAR'}"
+                )
+
+        # ── P1: Low-conviction check (overrides weak BULL/BEAR → NEUT) ──
+        low_confidence = False
+        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0:
+            signal, low_confidence = self._check_low_conviction(pred, factors, signal, market)
+
         # ── Build detail string ──────────────────────────────
         detail_parts = []
         if overheated:
             detail_parts.append(over_reason)
+        if conflict_override:
+            detail_parts.append(f"⚠ VIX-EPU冲突→NEUT (VIX={self._vix_now:.1f}, EPU={epu_value:.0f})")
+        if flat_market:
+            detail_parts.append(f"平盘→NEUT (|10d ret| < {FLAT_MARKET_THRESHOLD:.1%})")
+        if sentiment_overridden:
+            detail_parts.append(f"情绪{'-'.join(sentiment_direction.split('/'))}→NEUT")
+        if low_confidence:
+            detail_parts.append("低信念→NEUT")
 
         # Regime description (no longer defaulting to trend-continuation)
         if "vix_rising" in regime_key:
@@ -553,17 +871,99 @@ class HighConfidencePredictor:
                 direction = "↓" if self._vix_trend_5d < 0 else "↑"
                 detail_parts.append(f"VIX={self._vix_now:.1f}{direction}")
 
+        # ── Regime detail for non-shift paths ──
+        if regime_unfamiliar and regime_dist is not None:
+            detail_parts.append(f"⚠ 陌生制度(D={regime_dist:.1f}σ)")
+
         return MarketPrediction(
             market=market,
             signal=signal,
             expected_ret=round(float(pred), 4),
-            confidence=round(cfg["accuracy"], 4),
+            confidence=round(confidence, 4),
             tier=tier,
             regime=f"{regime_key}_{epu_label}" if (epu_label != "us" and regime_key not in ("normal", "high_epu")) else regime_key,
             factors=factors,
             detail=" | ".join(detail_parts) if detail_parts else "neutral",
             overheat=overheated,
+            flat_market=flat_market,
+            vix_epu_conflict=conflict_override,
+            low_confidence=low_confidence,
+            regime_distance=round(regime_dist, 2) if regime_dist is not None else None,
+            regime_shift=regime_shift,
+            regime_unfamiliar=regime_unfamiliar,
         )
+
+    def compute_rolling_backtest(
+        self,
+        market: str,
+        prices: pd.Series,
+        epu_annual: pd.Series,
+        window_years: int = 5,
+    ) -> Optional[float]:
+        """Compute directional accuracy over the most recent window_years.
+
+        Re-fits the 3-factor model on only the last window_years of data
+        to assess whether the full-history backtest is masking recent
+        performance degradation.
+
+        Returns accuracy as a float (0-1), or None if insufficient data.
+        """
+        if market not in self._models:
+            return None
+
+        if prices is None or prices.empty:
+            return None
+
+        daily_r = prices.pct_change(fill_method=None)
+        annual_r = daily_r.resample("YE").apply(lambda x: np.prod(1 + x) - 1).dropna()
+        if len(annual_r) < window_years:
+            return None
+
+        # Slice to most recent window_years
+        recent_annual = annual_r.iloc[-window_years:]
+
+        cfg = self._models[market]
+        epu_label = self._market_epu_label.get(market, "us")
+        epu_thresh = self._epu_threshold.get(epu_label)
+        if epu_thresh is None:
+            return None
+
+        tm = trend_momentum(prices).resample("YE").mean().reindex(annual_r.index)
+        mr = mean_reversion(prices).resample("YE").mean().reindex(annual_r.index)
+        vr = volatility_regime(prices).resample("YE").mean().reindex(annual_r.index)
+        fwd = annual_r.shift(-1).dropna()
+
+        valid = tm.dropna().index.intersection(mr.dropna().index).intersection(
+            vr.dropna().index).intersection(fwd.index).intersection(epu_annual.dropna().index)
+        valid = valid.intersection(recent_annual.index)
+
+        if len(valid) < 4:
+            return None
+
+        tm_v = tm.loc[valid]
+        mr_v = mr.loc[valid]
+        vr_v = vr.loc[valid]
+        fwd_v = fwd.loc[valid]
+        epu_v = epu_annual.loc[valid]
+
+        high_mask = epu_v > epu_thresh
+        preds = []
+        actuals = []
+
+        for i in range(len(valid)):
+            regime_key = "high_epu" if high_mask.iloc[i] else "normal"
+            if regime_key not in cfg["regime_models"]:
+                continue
+            m = cfg["regime_models"][regime_key]["model"]
+            x = np.array([[tm_v.iloc[i], mr_v.iloc[i], vr_v.iloc[i]]])
+            preds.append(float(m.predict(x)[0]))
+            actuals.append(float(fwd_v.iloc[i]))
+
+        if len(preds) < 3:
+            return None
+
+        acc = float((np.sign(preds) == np.sign(actuals)).mean())
+        return round(acc, 4)
 
     def predict_all(
         self,
@@ -596,4 +996,6 @@ class HighConfidencePredictor:
 
 __all__ = ["MarketPrediction", "HighConfidencePredictor",
            "EMERGING_MARKETS", "DEVELOPED_MARKETS", "GROUP_EPU_THRESHOLDS",
-           "OVERHEAT_NEUT_THRESHOLD", "OVERHEAT_BEAR_THRESHOLD"]
+           "OVERHEAT_NEUT_THRESHOLD", "OVERHEAT_BEAR_THRESHOLD",
+           "FLAT_MARKET_THRESHOLD",
+           "LOW_CONVICTION_RET_THRESHOLD", "LOW_CONVICTION_Z_THRESHOLD"]

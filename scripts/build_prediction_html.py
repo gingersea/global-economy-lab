@@ -28,6 +28,93 @@ def load_json(path):
         return json.load(f)
 
 
+def compute_rolling_accuracy(num_weeks=4):
+    """Read last N archive prediction JSONs and compute rolling actual accuracy.
+
+    Returns dict with:
+      - rolling_hit_rate: average actual_accuracy.hit_rate over available weeks
+      - weekly_rates: list of (period, hit_rate, hits, total) tuples
+      - tier1_rolling: average Tier1-only hit rate
+      - per_market: {market_code: rolling_hit_rate} for each market
+    """
+    archive_dir = OUTPUT_DIR / "archive"
+    if not archive_dir.exists():
+        return {"rolling_hit_rate": None, "weekly_rates": [], "tier1_rolling": None, "per_market": {}}
+
+    # Get sorted archive dirs (newest first)
+    dirs = sorted(
+        [d for d in archive_dir.iterdir() if d.is_dir()],
+        reverse=True,
+    )
+    if not dirs:
+        return {"rolling_hit_rate": None, "weekly_rates": [], "tier1_rolling": None, "per_market": {}}
+
+    weekly_rates = []
+    per_market_hits = {}   # market → total_hits
+    per_market_total = {}  # market → total_scored
+    tier1_hits = 0
+    tier1_total = 0
+
+    for d in dirs[:num_weeks]:
+        json_path = d / "weekly_prediction.json"
+        if not json_path.exists():
+            continue
+        try:
+            data = load_json(json_path)
+        except Exception:
+            continue
+
+        aa = data.get("actual_accuracy", {})
+        if not aa or aa.get("hit_rate") is None:
+            continue
+
+        period = data.get("prediction_period", d.name)
+        weekly_rates.append({
+            "period": period,
+            "hit_rate": aa["hit_rate"],
+            "hits": aa.get("hits", 0),
+            "total": aa.get("total_scored", 0),
+        })
+
+        # Per-market breakdown
+        markets_detail = aa.get("markets", {})
+        for mkt_code, mkt_info in markets_detail.items():
+            hit = mkt_info.get("hit")
+            if hit is not None:
+                per_market_hits[mkt_code] = per_market_hits.get(mkt_code, 0) + (1 if hit else 0)
+                per_market_total[mkt_code] = per_market_total.get(mkt_code, 0) + 1
+
+        # Tier1 breakdown (from the prediction itself)
+        for m in data.get("markets", []):
+            if m.get("tier") == 1:
+                mkt_code = m["market"]
+                mkt_hit = markets_detail.get(mkt_code, {}).get("hit")
+                if mkt_hit is not None:
+                    tier1_hits += 1 if mkt_hit else 0
+                    tier1_total += 1
+
+    total_hits = sum(r["hits"] for r in weekly_rates)
+    total_scored = sum(r["total"] for r in weekly_rates)
+
+    rolling_hit_rate = round(total_hits / total_scored, 4) if total_scored > 0 else None
+    tier1_rolling = round(tier1_hits / tier1_total, 4) if tier1_total > 0 else None
+
+    per_market = {}
+    for mkt, hits in per_market_hits.items():
+        total = per_market_total.get(mkt, 0)
+        if total > 0:
+            per_market[mkt] = round(hits / total, 4)
+
+    return {
+        "rolling_hit_rate": rolling_hit_rate,
+        "weekly_rates": weekly_rates,
+        "tier1_rolling": tier1_rolling,
+        "per_market": per_market,
+        "total_hits": total_hits,
+        "total_scored": total_scored,
+    }
+
+
 def signal_html(sig):
     if sig == "BULL":
         return '<span class="signal-bull">▲ BULL</span>'
@@ -174,6 +261,49 @@ MARKET_NAMES = {
     "IN": "印度 NIFTY", "AU": "澳洲 ASX", "CN": "中国 A股",
     "HK": "恒生指数",
 }
+
+
+def _rolling_accuracy_html(rolling):
+    """Generate HTML metric cards for rolling 4-week accuracy."""
+    if rolling is None or rolling.get("rolling_hit_rate") is None:
+        return ""
+
+    hr = rolling["rolling_hit_rate"]
+    t1_hr = rolling.get("tier1_rolling")
+    weeks = rolling.get("weekly_rates", [])
+    n_weeks = len(weeks)
+    total_hits = rolling.get("total_hits", 0)
+    total_scored = rolling.get("total_scored", 0)
+
+    acc_color = "#4caf50" if hr >= 0.70 else ("#ff9800" if hr >= 0.55 else "#f44336")
+    t1_color = "#4caf50" if (t1_hr is not None and t1_hr >= 0.70) else ("#ff9800" if (t1_hr is not None and t1_hr >= 0.55) else "#f44336")
+
+    # Build weekly breakdown tooltip
+    weekly_parts = []
+    for w in weeks:
+        wr = w["hit_rate"]
+        wc = "#4caf50" if wr >= 0.70 else ("#ff9800" if wr >= 0.55 else "#f44336")
+        weekly_parts.append(
+            f'<span style="color:{wc}">{w["period"]}: {wr:.0%} ({w["hits"]}/{w["total"]})</span>'
+        )
+    weekly_breakdown = " · ".join(weekly_parts) if weekly_parts else "暂无数据"
+
+    tier1_str = ""
+    if t1_hr is not None:
+        tier1_str = f'<div style="font-size:10px;color:#888;margin-top:2px">Tier1 滚动 {t1_hr:.0%}</div>'
+
+    return f"""
+        <div class="metric">
+            <div class="lbl">滚动{n_weeks}周实际准确率</div>
+            <div class="val" style="color:{acc_color}">{hr:.0%}</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">{total_hits}/{total_scored} 方向正确</div>
+            {tier1_str}
+        </div>
+        <div class="metric">
+            <div class="lbl">滚动{n_weeks}周明细</div>
+            <div class="val" style="font-size:12px;line-height:1.4">{weekly_breakdown}</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">← 旧 | 新 →</div>
+        </div>"""
 
 
 def compare_prediction(pred_markets, actual_dict, pred_source_label="预测"):
@@ -523,7 +653,10 @@ def build_current_prediction(data):
     
     tier1 = [m for m in markets if m["tier"] == 1]
     tier2 = [m for m in markets if m["tier"] == 2]
-    
+
+    # P2: Compute rolling 4-week actual accuracy
+    rolling = compute_rolling_accuracy(num_weeks=4)
+
     def _ret_color(val):
         c = "4caf50" if val >= 0 else "f44336"
         return f'<span style="color:#{c}">{val * 100:+.2f}%</span>'
@@ -534,6 +667,11 @@ def build_current_prediction(data):
         tm = m.get("tm_z", 0)
         mr = m.get("mr_z", 0)
         vr = m.get("vr_z", 0)
+        if m.get("regime_shift", False):
+            tags.append('<span class="overheat-tag" style="background:rgba(244,67,54,0.15);color:#f44336">🔴 制度偏离→NEUT</span>')
+        elif m.get("regime_unfamiliar", False):
+            rd = m.get("regime_distance", 0)
+            tags.append(f'<span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">⚠ 陌生制度(D={rd:.1f})</span>')
         if m.get("overheat", False) or tm > 3.5:
             tags.append('<span class="overheat-tag">⚠过热</span>')
         elif tm > 2.0:
@@ -546,35 +684,97 @@ def build_current_prediction(data):
             tags.append('<span class="overheat-tag">偏热</span>')
         elif mr > 1.0:
             tags.append('<span class="oversold-tag">偏卖</span>')
+        # P0/P1: New override tags
+        if m.get("flat_market", False):
+            tags.append('<span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">平盘→NEUT</span>')
+        if m.get("vix_epu_conflict", False):
+            tags.append('<span class="overheat-tag" style="background:rgba(156,39,176,0.15);color:#ce93d8">VIX-EPU冲突</span>')
         return ' '.join(tags)
     
     def market_row(m):
-        """Build a full market table row with YTD and weekly change."""
+        """Build a full market table row with YTD, weekly change, rolling accuracy, and 5Y backtest."""
         code = m["market"]
         ytd_val = YTD.get(code)
         ytd_html = f'<span style="color:#4caf50">{pct_str(ytd_val)}</span>' if ytd_val is not None and ytd_val >= 0 else f'<span style="color:#f44336">{pct_str(ytd_val) if ytd_val is not None else "N/A"}</span>'
         weekly_change = W27_ACTUAL.get(code, {}).get("ret")
         weekly_html = f'<span style="color:#4caf50">{pct_str(weekly_change)}</span>' if weekly_change is not None and weekly_change >= 0 else f'<span style="color:#f44336">{pct_str(weekly_change) if weekly_change is not None else "N/A"}</span>'
-        
+
+        # P2: Rolling per-market accuracy
+        per_mkt_roll = rolling.get("per_market", {}).get(code) if rolling else None
+        if per_mkt_roll is not None:
+            roll_color = "#4caf50" if per_mkt_roll >= 0.70 else ("#ff9800" if per_mkt_roll >= 0.55 else "#f44336")
+            roll_html = f'<span style="color:{roll_color};font-weight:600">{per_mkt_roll:.0%}</span>'
+        else:
+            roll_html = '<span style="color:#555">-</span>'
+
+        # P3: 5-year rolling backtest
+        roll5y = m.get("rolling_accuracy")
+        full_acc = m.get("accuracy", 0)
+        if roll5y is not None:
+            degraded = roll5y < full_acc * 0.7
+            r5_color = "#ff9800" if degraded else "#888"
+            r5_weight = "font-weight:700" if degraded else ""
+            r5_html = f'<span style="color:{r5_color};{r5_weight}">{roll5y:.1%}</span>'
+        else:
+            r5_html = '<span style="color:#555">N/A</span>'
+
+        # P4: Sentiment factor column
+        sent = m.get("sentiment_factor", "N/A")
+        if sent == "BULLISH":
+            sent_html = '<span style="color:#4caf50;font-size:10px">↗ 看好</span>'
+        elif sent == "BEARISH":
+            sent_html = '<span style="color:#f44336;font-size:10px">↘ 看空</span>'
+        elif sent == "NEUTRAL":
+            sent_html = '<span style="color:#888;font-size:10px">─ 中性</span>'
+        else:
+            sent_html = '<span style="color:#555;font-size:10px">N/A</span>'
+
+        # Signal rendering with regime_shift and low_confidence markers
+        sig = m["signal"]
+        low_conf = m.get("low_confidence", False)
+        regime_shift = m.get("regime_shift", False)
+        if regime_shift:
+            sig_html = '<span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span>'
+        elif sig == "NEUT" and low_conf:
+            sig_html = '<span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span>'
+        else:
+            sig_html = signal_html(sig)
+
         detail = m.get("detail", "")
         tags = _tag(m)
         diagnosis = f'{tags} {detail}'.strip()
-        
+
         row_class = ' cn-row' if code == 'CN' else ''
-        
+
         cn_note = '<span class="cn-note">⚠ 仅供参考</span>' if code == 'CN' else ''
-        
+
+        # Regime distance cell (P3)
+        rd = m.get("regime_distance")
+        if rd is not None:
+            if m.get("regime_shift", False):
+                rd_html = f'<span style="color:#f44336;font-weight:700">{rd:.1f} 🔴</span>'
+            elif m.get("regime_unfamiliar", False):
+                rd_html = f'<span style="color:#ff9800;font-weight:700">{rd:.1f} ⚠</span>'
+            else:
+                rd_html = f'<span style="color:#666">{rd:.1f}</span>'
+        else:
+            rd_html = '<span style="color:#555">-</span>'
+
         return (
             f'<tr class="{row_class}">'
             f'<td style="font-size:13px">{tier_badge(m["tier"])}{m["name_cn"]}{cn_note}</td>'
-            f'<td>{signal_html(m["signal"])}</td>'
+            f'<td>{sig_html}</td>'
             f'<td style="text-align:right">{_ret_color(m["pred_ret"])}</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m["accuracy"]:.1%}</td>'
+            f'<td style="text-align:right;font-size:12px;color:#888">{r5_html}</td>'
+            f'<td style="text-align:right;font-size:12px">{roll_html}</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m["tm_z"]:+.2f}σ</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m["mr_z"]:+.2f}σ</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m.get("vr_z",0):+.2f}σ</td>'
+            f'<td style="text-align:right;font-size:12px">{rd_html}</td>'
             f'<td style="text-align:right">{ytd_html}</td>'
             f'<td style="text-align:right">{weekly_html}</td>'
+            f'<td style="text-align:center">{sent_html}</td>'
             f'<td style="font-size:11px;color:#666">{diagnosis}</td>'
             f'</tr>'
         )
@@ -663,6 +863,12 @@ def build_current_prediction(data):
             <div class="val" style="color:#ff9800">{len(tier2)} 市场</div>
             <div style="font-size:10px;color:#888;margin-top:4px">55-70% · 仅供参考</div>
         </div>
+        {_rolling_accuracy_html(rolling)}
+        <div class="metric" style="border:1px solid rgba(244,67,54,0.3)">
+            <div class="lbl">制度偏离市场数</div>
+            <div class="val" style="font-size:18px;color:#f44336">{data.get('regime_shifted_count', 0)}🔴 {data.get('regime_warned_count', 0)}⚠</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">强制NEUT · 陌生制度</div>
+        </div>
         <div class="metric">
             <div class="lbl">数据快照</div>
             <div class="val" style="font-size:14px;color:#4facfe;font-family:monospace">{gen_time}</div>
@@ -673,12 +879,12 @@ def build_current_prediction(data):
     {hk_html}
 
     <h3 style="font-size:15px;color:#4caf50;margin-bottom:16px;">★★★ Tier 1 — 高置信度 (≥70% 准确率)</h3>
-    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">预测未来12个月收益方向 · YTD = 年初至今实际涨幅 · 周变 = 上周(6/29-7/5)变化 · 数据至 = 最近交易日</p>
-    <div style="overflow-x:auto">
-    <table class="predict-table" style="min-width:1000px">
-        <thead><tr>
-            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
-            <th style="text-align:right">置信度</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th>诊断 · 数据至</th>
+    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">置信度=回测 | 5年=近5年滚动 | 滚动=近4周实际 | 情绪=独立因子 | 制度σ=马氏距离 | YTD=年初至今 | 周变=上周变化</p>
+	    <div style="overflow-x:auto">
+	    <table class="predict-table" style="min-width:1400px">
+	        <thead><tr>
+	            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
+	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">制度σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th style="text-align:center">情绪</th><th>诊断</th>
         </tr></thead>
         <tbody>
     {tier1_rows}
@@ -688,10 +894,10 @@ def build_current_prediction(data):
 
     <h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70% 准确率)</h3>
     <div style="overflow-x:auto">
-    <table class="predict-table" style="min-width:1000px">
-        <thead><tr>
-            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
-            <th style="text-align:right">置信度</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th>诊断 · 数据至</th>
+	    <table class="predict-table" style="min-width:1400px">
+	        <thead><tr>
+	            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
+	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">制度σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th style="text-align:center">情绪</th><th>诊断</th>
         </tr></thead>
         <tbody>
     {tier2_rows}
