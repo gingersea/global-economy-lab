@@ -220,16 +220,48 @@ def get_us_pmi(
     end_date: Optional[str] = None,
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Fetch ISM Manufacturing PMI (FRED: NAPM).
+    """Fetch ISM Manufacturing PMI.
+
+    Primary source: akshare (``macro_usa_ism_pmi``).  Falls back to FRED
+    series ``NAPM`` when akshare is unavailable or the data is too stale.
 
     Args:
         start_date: ISO-8601 start date.
-        end_date:   ISO-8601 end date.
+        end_date:   ISO-8601 end date. Defaults to today.
         use_cache:  Return cached data when available.
 
     Returns:
-        DataFrame with columns ``["value", "series_id"]``.
+        DataFrame with columns ``["value", "series_id"]`` indexed by date.
     """
+    # ── Primary: akshare ISM Manufacturing PMI ───────────────────────────
+    try:
+        import akshare as ak  # type: ignore[import]
+
+        raw = ak.macro_usa_ism_pmi()
+        if raw is not None and not raw.empty:
+            # Columns: 商品, 日期, 今值, 预测值, 前值
+            date_col = "日期" if "日期" in raw.columns else raw.columns[1]
+            value_col = "今值" if "今值" in raw.columns else raw.columns[2]
+            df = raw[[date_col, value_col]].copy()
+            df[date_col] = pd.to_datetime(df[date_col])
+            df = df.rename(columns={date_col: "date", value_col: "value"})
+            df = df.dropna(subset=["value"]).set_index("date").sort_index()
+            df["series_id"] = "ISM_PMI"
+            # Apply date filtering
+            if start_date:
+                df = df.loc[df.index >= pd.Timestamp(start_date)]
+            if end_date:
+                df = df.loc[df.index <= pd.Timestamp(end_date)]
+            if not df.empty:
+                logger.info(
+                    f"[PMI] akshare: {len(df)} rows "
+                    f"({df.index[0].date()} → {df.index[-1].date()})"
+                )
+                return df
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[PMI] akshare backend failed: {exc}")
+
+    # ── Fallback: FRED NAPM (requires API key; public CSV returns 404) ──
     fetcher = MacroEconomicFetcher(series_id="NAPM")
     return fetcher.fetch(start_date=start_date, end_date=end_date, use_cache=use_cache)
 

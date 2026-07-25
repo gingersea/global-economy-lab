@@ -360,6 +360,29 @@ def run_predictions(vix_series=None):
     except Exception as e:
         logger.warning(f"Sentiment loading skipped: {e}")
 
+    # Load economic cycle position
+    cycle_phase = "unknown"
+    cycle_label = "Unknown 未知"
+    cycle_pmi = None
+    cycle_cpi_yoy = None
+    try:
+        from src.data_fetcher.macro_economic import get_us_pmi, get_us_cpi, get_fed_funds_rate
+        from src.analysis.cycle_position import get_current_phase
+        pmi = get_us_pmi()
+        cpi = get_us_cpi()
+        ffr = get_fed_funds_rate()
+        cycle = get_current_phase(pmi, cpi, ffr)
+        cycle_phase = cycle.get("phase", "unknown")
+        cycle_label = cycle.get("phase_label", "Unknown 未知")
+        cycle_pmi = cycle.get("pmi")
+        cycle_cpi_yoy = cycle.get("cpi_yoy")
+        logger.info(
+            f"Economic cycle: {cycle_label} "
+            f"(PMI={cycle_pmi}, CPI YoY={cycle_cpi_yoy}%)"
+        )
+    except Exception as e:
+        logger.warning(f"Cycle position skipped: {e}")
+
     # Set per-market parameters
     for market, params in MARKET_PARAMS.items():
         predictor.set_market_params(market, **params)
@@ -384,6 +407,7 @@ def run_predictions(vix_series=None):
     predictions = predictor.predict_all(
         prices, epu_now,
         epu_values={"us": epu_now, "china": china_epu_now},
+        cycle_phase=cycle_phase,
     )
 
     # Compute rolling 5-year backtest for each market
@@ -410,12 +434,18 @@ def run_predictions(vix_series=None):
     else:
         is_high = predictor._is_high_epu(epu_now, "us")
 
-    return predictions, {"us": epu_now, "china": china_epu_now}, is_high, vix_info, epu_percentile, predictor
+    return predictions, {"us": epu_now, "china": china_epu_now}, is_high, vix_info, epu_percentile, predictor, {
+        "cycle_phase": cycle_phase,
+        "cycle_label": cycle_label,
+        "cycle_pmi": cycle_pmi,
+        "cycle_cpi_yoy": cycle_cpi_yoy,
+    }
 
 
 # ── JSON output ──────────────────────────────────────────────
 def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
-               actual_accuracy=None, vix_info=None, epu_percentile=50.0, predictor=None):
+               actual_accuracy=None, vix_info=None, epu_percentile=50.0, predictor=None,
+               cycle_info=None):
     """Convert predictions to structured JSON with all metadata."""
     year, week_num, mon, sun = week_info
     epu_val = epu_values["us"]
@@ -489,6 +519,12 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
             "p20": vix_info["p20"] if vix_info else None,
             "trend_5d": round(vix_info["trend_5d"], 4) if vix_info and vix_info.get("trend_5d") is not None else None,
             "trend_20d": round(vix_info["trend_20d"], 4) if vix_info and vix_info.get("trend_20d") is not None else None,
+        },
+        "cycle": {
+            "phase": cycle_info["cycle_phase"] if cycle_info else "unknown",
+            "label": cycle_info["cycle_label"] if cycle_info else "Unknown 未知",
+            "pmi": cycle_info["cycle_pmi"] if cycle_info else None,
+            "cpi_yoy": cycle_info["cycle_cpi_yoy"] if cycle_info else None,
         },
         "tier1_count": len(tier1),
         "tier2_count": len(tier2),
@@ -946,7 +982,7 @@ def main():
 
     # Step 1: Run predictions
     logger.info("Step 1: Running predictions...")
-    predictions, epu_values, is_high_epu, vix_info, epu_percentile, predictor = run_predictions(
+    predictions, epu_values, is_high_epu, vix_info, epu_percentile, predictor, cycle_info = run_predictions(
         vix_series=vix_series
     )
     epu_val = epu_values["us"]
@@ -982,6 +1018,7 @@ def main():
         vix_info=vix_info,
         epu_percentile=epu_percentile,
         predictor=predictor,
+        cycle_info=cycle_info,
     )
 
     json_path = output_dir / "weekly_prediction.json"
@@ -1003,6 +1040,8 @@ def main():
         logger.info("\n" + "=" * 64)
         logger.info(f"SUMMARY — {period_label}")
         logger.info(f"  US EPU: {epu_val:.0f} (P{epu_percentile:.0f}, {'HIGH' if is_high_epu else 'NORMAL'})")
+        if cycle_info and cycle_info.get("cycle_phase") != "unknown":
+            logger.info(f"  Cycle: {cycle_info['cycle_label']} (PMI={cycle_info.get('cycle_pmi')}, CPI YoY={cycle_info.get('cycle_cpi_yoy')}%)")
         if vix_info and vix_info["current"]:
             logger.info(f"  VIX: {vix_info['current']:.1f} (5d: {vix_info.get('trend_5d',0):+.1%})")
         logger.info(f"  Signals: {sdist.get('BULL',0)} BULL / {sdist.get('NEUT',0)} NEUT / {sdist.get('BEAR',0)} BEAR")

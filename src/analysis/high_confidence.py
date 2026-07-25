@@ -660,6 +660,7 @@ class HighConfidencePredictor:
         market: str,
         prices: pd.Series,
         epu_value: float,
+        cycle_phase: str = "unknown",
     ) -> MarketPrediction:
         """Generate prediction for a single market.
 
@@ -833,9 +834,19 @@ class HighConfidencePredictor:
                 extreme_epu_neut = True
                 signal = 0
 
+        # ── Cycle-aware tilt (W31: stagflation/recession → risk-off) ──
+        cycle_tilt_applied = False
+        if cycle_phase != "unknown" and signal != 0:
+            if cycle_phase == "stagflation" and signal > 0:
+                signal = 0
+                cycle_tilt_applied = True
+            elif cycle_phase == "recession" and signal > 0:
+                signal = 0
+                cycle_tilt_applied = True
+
         # ── P1: Low-conviction check (overrides weak BULL/BEAR → NEUT) ──
         low_confidence = False
-        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0 and not extreme_epu_neut:
+        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0 and not extreme_epu_neut and not cycle_tilt_applied:
             signal, low_confidence = self._check_low_conviction(pred, factors, signal, market)
         elif extreme_epu_neut:
             low_confidence = True
@@ -854,6 +865,8 @@ class HighConfidencePredictor:
             detail_parts.append(f"情绪{'-'.join(sentiment_direction.split('/'))}→NEUT")
         if low_confidence:
             detail_parts.append("低信念→NEUT")
+        if cycle_tilt_applied:
+            detail_parts.append(f"周期{cycle_phase}→NEUT")
 
         # Regime description (no longer defaulting to trend-continuation)
         if "vix_rising" in regime_key:
@@ -986,6 +999,7 @@ class HighConfidencePredictor:
         market_prices: Dict[str, pd.Series],
         epu_value: float,
         epu_values: Dict[str, float] = None,
+        cycle_phase: str = "unknown",
     ) -> List[MarketPrediction]:
         """Generate predictions for all fitted markets.
 
@@ -1004,7 +1018,7 @@ class HighConfidencePredictor:
                 continue
             epu_label = self._market_epu_label.get(market, "us")
             epu_val = epu_values.get(epu_label, epu_value)
-            pred = self.predict(market, px, epu_val)
+            pred = self.predict(market, px, epu_val, cycle_phase=cycle_phase)
             results.append(pred)
         results.sort(key=lambda x: -x.confidence)
         return results

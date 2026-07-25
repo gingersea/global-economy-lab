@@ -652,6 +652,54 @@ def build_monthly_review(monthly_pred, actual_dict):
     </div>"""
 
 
+def _cycle_metric_html(data):
+    """Generate the economic cycle metric card."""
+    cycle = data.get("cycle", {})
+    phase = cycle.get("phase", "unknown")
+    label = cycle.get("label", "Unknown")
+    pmi = cycle.get("pmi")
+    cpi_yoy = cycle.get("cpi_yoy")
+
+    if phase == "unknown" or pmi is None:
+        return ""
+
+    phase_colors = {
+        "recovery": "#4caf50",
+        "overheat": "#ff9800",
+        "stagflation": "#f44336",
+        "recession": "#f44336",
+    }
+    color = phase_colors.get(phase, "#888")
+    return f"""
+        <div class="metric">
+            <div class="lbl">经济周期</div>
+            <div class="val" style="font-size:18px;color:{color}">{label}</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">PMI {pmi} · CPI YoY {cpi_yoy}%</div>
+        </div>"""
+
+
+def _cycle_warning_html(data):
+    """Generate a stagflation/recession warning box."""
+    cycle = data.get("cycle", {})
+    phase = cycle.get("phase", "unknown")
+    label = cycle.get("label", "")
+    pmi = cycle.get("pmi", "?")
+    cpi_yoy = cycle.get("cpi_yoy", "?")
+
+    if phase not in ("stagflation", "recession"):
+        return ""
+
+    warning_text = (
+        f"经济处于{label}阶段（PMI={pmi}，CPI YoY={cpi_yoy}%）。"
+        "此环境下BULL信号的可信度显著降低——模型已将所有BULL信号自动降级为NEUT。"
+        "在滞胀/衰退周期中，防御性配置优于风险追逐。"
+    )
+    return f"""
+    <div class="warning-box">
+        <p>⚠ <strong>周期预警：</strong>{warning_text}</p>
+    </div>"""
+
+
 def build_current_prediction(data):
     """Build 本周预测 section."""
     epu = data["epu"]
@@ -861,6 +909,7 @@ def build_current_prediction(data):
             <div class="val" style="font-size:20px;color:#ff9800">{epu.get('china_epu', 'N/A')}</div>
             <div style="font-size:10px;color:#888;margin-top:4px">中EPU高 → 趋势延续</div>
         </div>
+        {_cycle_metric_html(data)}
         <div class="metric">
             <div class="lbl">Tier 1 高置信度</div>
             <div class="val" style="color:#4caf50">{len(tier1)} 市场</div>
@@ -883,6 +932,7 @@ def build_current_prediction(data):
             <div style="font-size:10px;color:#888;margin-top:4px">3-Factor Kalman DFM</div>
         </div>
     </div>
+    {_cycle_warning_html(data)}
 
     {hk_html}
 
