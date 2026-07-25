@@ -1,12 +1,12 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>全球市场预测 (2026-07-25 10:27 CST) · GingerFamily.CN</title>
+<title>全球市场预测 (第31周) · GingerFamily.CN</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a0f;color:#e0e0e0;font-family:'Inter',-apple-system,sans-serif;min-height:100vh}
 nav{background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.08);padding:16px 32px;position:sticky;top:0;z-index:100}
-nav .inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:28px}
-nav a{color:#888;text-decoration:none;font-size:14px;transition:color 0.2s}
+nav .inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+nav a{color:#888;text-decoration:none;font-size:14px;transition:color 0.2s;white-space:nowrap}
 nav a:hover,nav a.active{color:#fff}
 nav .home{font-size:18px;font-weight:700;color:#f7971e!important}
 .container{max-width:1100px;margin:0 auto;padding:32px 24px 80px}
@@ -22,15 +22,13 @@ footer{text-align:center;padding:32px 0;color:#444;font-size:12px;border-top:1px
 .metric{background:rgba(255,255,255,0.04);border-radius:12px;padding:20px;text-align:center}
 .metric .val{font-size:28px;font-weight:800;margin-bottom:4px}
 .metric .lbl{font-size:12px;color:#666;text-transform:uppercase}
-.predict-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:16px}
+.predict-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:16px;overflow-x:auto}
 .predict-table th{color:#888;font-size:10px;text-transform:uppercase;text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.08)}
 .predict-table td{padding:10px 10px;border-bottom:1px solid rgba(255,255,255,0.04)}
 .predict-table tr:hover td{background:rgba(255,255,255,0.02)}
 .signal-bull{color:#4caf50;font-weight:700}
 .signal-bear{color:#f44336;font-weight:700}
-.signal-neut{color:#ff9800;font-weight:700}
-.overheat-warn{color:#ff6d00;font-weight:700;font-size:10px;vertical-align:middle;margin-left:4px}
-.signal-overheat{color:#ff6d00;font-weight:700}
+.signal-neut{color:#888;font-weight:700}
 .tier-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:4px}
 .tier1{background:rgba(76,175,80,0.15);color:#4caf50}
 .tier2{background:rgba(255,152,0,0.15);color:#ff9800}
@@ -39,22 +37,58 @@ footer{text-align:center;padding:32px 0;color:#444;font-size:12px;border-top:1px
 .insight-box{margin-top:16px;padding:20px;background:rgba(255,255,255,0.04);border-radius:12px;border-left:3px solid #f7971e}
 .insight-box p{margin:0;font-size:14px;color:#aaa;line-height:1.8}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-@media(max-width:700px){.grid-2{grid-template-columns:1fr}}
+@media(max-width:700px){.grid-2{grid-template-columns:1fr}nav .inner{gap:12px}nav a{font-size:12px}nav .home{font-size:15px}}
 .ts-stamp{display:inline-block;background:rgba(255,255,255,0.05);border-radius:6px;padding:3px 8px;font-size:11px;color:#666;font-family:monospace}
 .hk-section{background:linear-gradient(135deg,rgba(247,151,30,0.08),rgba(247,151,30,0.02));border:1px solid rgba(247,151,30,0.2);border-radius:16px;padding:24px;margin-bottom:24px}
 .hk-section h3{color:#f7971e;font-size:18px;margin-bottom:16px}
-.group-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;margin-left:4px}
-.group-em{background:rgba(255,152,0,0.15);color:#ff9800}
-.group-dm{background:rgba(33,150,243,0.15);color:#2196f3}
+.review-card{background:rgba(255,255,255,0.025);border-radius:16px;padding:24px;margin-bottom:24px;border:1px solid rgba(255,255,255,0.05)}
+.review-card h2{font-size:18px;font-weight:700;margin-bottom:12px;color:#e0e0e0}
+.review-card .summary-stats{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.review-card .stat{background:rgba(255,255,255,0.04);border-radius:10px;padding:14px 20px;text-align:center;min-width:120px}
+.review-card .stat .n{font-size:26px;font-weight:800;margin-bottom:2px}
+.review-card .stat .l{font-size:11px;color:#666}
+.correct{color:#4caf50}
+.wrong{color:#f44336}
+.passive{color:#888}
+.ytd-chart{margin-top:16px}
+.ytd-row{display:flex;align-items:center;margin-bottom:10px;gap:8px}
+.ytd-label{width:110px;text-align:right;font-size:12px;color:#aaa;flex-shrink:0}
+.ytd-bar-wrap{flex:1;height:22px;background:rgba(255,255,255,0.04);border-radius:4px;overflow:hidden}
+.ytd-bar{height:100%;border-radius:4px;min-width:2px;display:flex;align-items:center;padding-left:8px;font-size:11px;font-weight:600;transition:width 0.5s ease;white-space:nowrap}
+.ytd-bar.positive{background:linear-gradient(90deg,rgba(76,175,80,0.7),rgba(76,175,80,0.4))}
+.ytd-bar.negative{background:linear-gradient(90deg,rgba(244,67,54,0.7),rgba(244,67,54,0.4))}
+.ytd-val{width:65px;text-align:left;font-size:12px;font-weight:600;flex-shrink:0}
+.overheat-tag{display:inline-block;background:rgba(244,67,54,0.15);color:#f44336;border-radius:4px;padding:2px 6px;font-size:10px;margin-left:4px}
+.oversold-tag{display:inline-block;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:4px;padding:2px 6px;font-size:10px;margin-left:4px}
+.cn-note{font-size:10px;color:#666;display:block;margin-top:2px}
+.cn-row td{opacity:0.7}
+.accuracy-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:16px}
+.acc-block{background:rgba(255,255,255,0.03);border-radius:10px;padding:16px}
+.acc-block h4{font-size:13px;color:#888;margin-bottom:8px}
+.acc-block .correct-list,.acc-block .wrong-list,.acc-block .neutral-list{font-size:12px;line-height:1.6}
+h2.section-title{font-size:18px;font-weight:700;margin:36px 0 20px;color:#e0e0e0;border-left:3px solid #f7971e;padding-left:12px}
+.outlook-card{background:linear-gradient(135deg,rgba(79,172,254,0.05),rgba(79,172,254,0.02));border:1px solid rgba(79,172,254,0.15);border-radius:16px;padding:24px;margin-bottom:24px}
+.outlook-card h3{color:#4facfe;font-size:18px;margin-bottom:16px}
+.warning-box{background:rgba(244,67,54,0.08);border:1px solid rgba(244,67,54,0.2);border-radius:10px;padding:16px;margin-top:16px}
+.warning-box p{font-size:13px;color:#f44336;margin:0;line-height:1.6}
+.epu-alert{background:linear-gradient(135deg,rgba(244,67,54,0.12),rgba(255,152,0,0.06));border:1px solid rgba(244,67,54,0.35);border-radius:12px;padding:20px 24px;margin:0 0 24px 0;text-align:center}
+.epu-alert .epu-alert-icon{font-size:22px;margin-bottom:6px}
+.epu-alert .epu-alert-title{font-size:14px;font-weight:700;color:#f44336;margin-bottom:8px}
+.epu-alert .epu-alert-body{font-size:12px;color:#e57373;line-height:1.7;max-width:800px;margin:0 auto}
+.epu-alert .epu-alert-stats{display:flex;justify-content:center;gap:24px;margin-top:10px;flex-wrap:wrap}
+.epu-alert .epu-alert-stat{background:rgba(0,0,0,0.2);border-radius:8px;padding:8px 14px}
+.epu-alert .epu-alert-stat .v{font-size:18px;font-weight:800;color:#ff5252}
+.epu-alert .epu-alert-stat .l{font-size:10px;color:#e57373}
+@media(max-width:600px){.review-card .summary-stats{flex-direction:column;gap:8px}.review-card .stat{min-width:unset}}
 </style></head><body>
 <nav>
     <div class="inner">
-        <a href="/" class="home">🦊 GingerFamily</a>
-        <a href="/tech.html">⏱ 时频技术</a>
-        <a href="/ai.html">🤖 AI 前沿</a>
-        <a href="/sci.html">🔬 科学探索</a>
-        <a href="/market.html">📈 财经情报</a>
-        <a href="/prediction.html">🔮 全球预测</a>
+        <a href="/" class="home">GingerFamily</a>
+        <a href="/tech.html">时频技术</a>
+        <a href="/ai.html">AI 前沿</a>
+        <a href="/sci.html">科学探索</a>
+        <a href="/market.html">财经情报</a>
+        <a href="/prediction.html" class="active">全球预测</a>
     </div>
 </nav>
 <div class="container">
@@ -62,16 +96,170 @@ footer{text-align:center;padding:32px 0;color:#444;font-size:12px;border-top:1px
     <div class="page-header">
         <div class="icon">🔮</div>
         <h1 style="background:linear-gradient(135deg,#f7971e,#ffd200);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">全球市场预测</h1>
-        <p class="sub">13 市场 · 3-Factor 模型 · 分市场制度切换 + VIX 辅助 ｜ 预测周期 2026年第31周 (7/27-8/2) ｜ <span class="ts-stamp">生成 2026-07-25 10:27 CST</span></p>
+        <p class="sub">13 市场 · 3 因子模型 · EPU 制度切换 ｜ 预测周期 2026年第31周 (7/27-8/2) ｜ <span class="ts-stamp">生成 2026-07-25 16:12 CST</span></p>
     </div>
+
+    <div class="epu-alert">
+            <div class="epu-alert-icon">WARNING</div>
+            <div class="epu-alert-title">Model Reliability Warning: EPU P99 Extreme Regime</div>
+            <div class="epu-alert-body">
+                Economic Policy Uncertainty at P99 historically. Model has insufficient training samples in this regime (P95+ &lt;5% of training data).
+                Three consecutive weeks of actual accuracy far below backtest levels. All signal confidence is degraded under extreme EPU conditions.
+                Cross-validate with fundamental analysis, technical indicators, and macro data. Do not rely solely on model signals for allocation decisions.
+            </div>
+            <div class="epu-alert-stats">
+                <div class="epu-alert-stat">
+                    <div class="l">Last Week Actual</div>
+                    <div class="v">2/9 = 22%</div>
+                </div>
+                <div class="epu-alert-stat">
+                    <div class="l">Long-term Backtest Avg</div>
+                    <div class="v">72%</div>
+                </div>
+                <div class="epu-alert-stat">
+                    <div class="l">BULL Signal Share</div>
+                    <div class="v">15%</div>
+                </div>
+            </div>
+        </div>
+    
+    <h2 class="section-title">📊 上周预测回顾 (2026年第27周 (6/29-7/5))</h2>
+    <div class="review-card">
+        <p style="color:#888;font-size:13px;margin-bottom:16px">
+            上周 (2026年第27周 (6/29-7/5)) 预测，
+            <span class="signal-bull">BULL</span>，
+            对比本周实际走势：
+        </p>
+        <div class="summary-stats">
+            <div class="stat">
+                <div class="n" style="color:#ff9800">55.6%</div>
+                <div class="l">Tier 1 方向正确率</div>
+            </div>
+            <div class="stat">
+                <div class="n correct">5/9</div>
+                <div class="l">Tier 1 正确/方向市场</div>
+            </div>
+            <div class="stat">
+                <div class="n" style="color:#ff9800">33.3%</div>
+                <div class="l">Tier 2 方向正确率</div>
+            </div>
+            <div class="stat">
+                <div class="n" style="color:#4caf50">6/12</div>
+                <div class="l">总体方向正确</div>
+            </div>
+        </div>
+
+        <div class="accuracy-summary">
+            <div class="acc-block"><h4 style="color:#4caf50">✓ 预测正确 (6 市场)</h4><div class="correct-list"><p><span class="tier-badge tier1">T1</span>印度 NIFTY +1.30% &nbsp; <span class="tier-badge tier1">T1</span>法国 CAC40 +1.28% &nbsp; <span class="tier-badge tier1">T1</span>恒生指数 +1.81% &nbsp; <span class="tier-badge tier1">T1</span>德国 DAX +4.20% &nbsp; <span class="tier-badge tier1">T1</span>英国 FTSE +1.38% &nbsp; <span class="tier-badge tier2">T2</span>意大利 MIB +2.59%</p></div></div>
+            <div class="acc-block"><h4 style="color:#f44336">✗ 预测错误 (6 市场)</h4><div class="wrong-list"><p><span class="tier-badge tier1">T1</span>加拿大 TSX <span class="signal-bull">▲ BULL</span> → +0.18% &nbsp; <span class="tier-badge tier1">T1</span>韩国 KOSPI <span class="signal-bull">▲ BULL</span> → -7.80% &nbsp; <span class="tier-badge tier1">T1</span>日经 225 <span class="signal-bull">▲ BULL</span> → -1.34% &nbsp; <span class="tier-badge tier1">T1</span>澳洲 ASX <span class="signal-bull">▲ BULL</span> → -1.12% &nbsp; <span class="tier-badge tier2">T2</span>巴西 Bovespa <span class="signal-bull">▲ BULL</span> → -0.29% &nbsp; <span class="tier-badge tier2">T2</span>中国 A股 <span class="signal-bull">▲ BULL</span> → +0.12%</p></div></div>
+            
+        </div>
+
+        <div style="margin-top:16px;overflow-x:auto">
+            <table class="predict-table" style="min-width:600px">
+                <thead><tr>
+                    <th>市场</th><th>预测</th><th>实际方向</th><th>实际涨跌%</th><th>结果</th>
+                </tr></thead>
+                <tbody>
+    <tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 印度 NIFTY</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +1.30%</span></td><td>+1.30%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 法国 CAC40</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +1.28%</span></td><td>+1.28%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 恒生指数</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +1.81%</span></td><td>+1.81%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 德国 DAX</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +4.20%</span></td><td>+4.20%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 英国 FTSE</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +1.38%</span></td><td>+1.38%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier2">T2</span> 意大利 MIB</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +2.59%</span></td><td>+2.59%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 加拿大 TSX</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#888">─ FLAT (+0.18%)</span></td><td>+0.18%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 韩国 KOSPI</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#f44336">▼ DOWN -7.80%</span></td><td>-7.80%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 日经 225</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#f44336">▼ DOWN -1.34%</span></td><td>-1.34%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 澳洲 ASX</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#f44336">▼ DOWN -1.12%</span></td><td>-1.12%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier2">T2</span> 巴西 Bovespa</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#888">─ FLAT (-0.29%)</span></td><td>-0.29%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier2">T2</span> 中国 A股</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#888">─ FLAT (+0.12%)</span></td><td>+0.12%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top:20px;padding:16px;background:rgba(244,67,54,0.05);border-radius:10px;border:1px solid rgba(244,67,54,0.1)">
+            <p style="font-size:13px;color:#aaa;margin:0">
+                <span style="color:#f44336;font-weight:700">▸ 上周总结：预测表现不及预期</span>
+                W27 预测方向正确率 50.0%（6/12）。Tier1 5/9 正确，Tier2 1/3 正确。最大失误：韩国 KOSPI BULL → -7.80%，CA, BR, CN BULL但平盘。高 EPU 环境下平盘市场增多，方向判断难度加大。
+            </p>
+        </div>
+    </div>
+    
+    <h2 class="section-title">📅 上月预测回顾 (6月月度总结)</h2>
+    <div class="review-card">
+        <p style="color:#888;font-size:13px;margin-bottom:16px">
+            上月 2026年第23周 (6/1-6/7) 预测，Tier 1 全部 10 个市场为 <span class="signal-bull">▲ BULL</span>，
+            CN 为 <span class="signal-neut">─ NEUT</span>，
+            对比 6 月整月实际走势 (5/29→6/30)：
+        </p>
+        <div class="summary-stats">
+            <div class="stat">
+                <div class="n" style="color:#ff9800">60.0%</div>
+                <div class="l">Tier 1 月度正确率</div>
+            </div>
+            <div class="stat">
+                <div class="n correct">6/10</div>
+                <div class="l">Tier 1 正确市场</div>
+            </div>
+            <div class="stat">
+                <div class="n" style="color:#f44336">0.0%</div>
+                <div class="l">Tier 2 月度正确率</div>
+            </div>
+            <div class="stat">
+                <div class="n" style="color:#4caf50">6/11</div>
+                <div class="l">总体方向正确</div>
+            </div>
+        </div>
+
+        <div class="accuracy-summary">
+            <div class="acc-block"><h4 style="color:#4caf50">✓ 预测正确 (6 市场)</h4><div class="correct-list"><p><span class="tier-badge tier1">T1</span>印度 NIFTY +1.35% &nbsp; <span class="tier-badge tier1">T1</span>英国 FTSE +0.84% &nbsp; <span class="tier-badge tier1">T1</span>澳洲 ASX +0.54% &nbsp; <span class="tier-badge tier1">T1</span>法国 CAC40 +2.70% &nbsp; <span class="tier-badge tier1">T1</span>意大利 MIB +3.29% &nbsp; <span class="tier-badge tier1">T1</span>日经 225 +5.63%</p></div></div>
+            <div class="acc-block"><h4 style="color:#f44336">✗ 预测错误 (5 市场)</h4><div class="wrong-list"><p><span class="tier-badge tier1">T1</span>韩国 KOSPI <span class="signal-bull">▲ BULL</span> → +0.00% &nbsp; <span class="tier-badge tier1">T1</span>加拿大 TSX <span class="signal-bull">▲ BULL</span> → +0.25% &nbsp; <span class="tier-badge tier1">T1</span>美国 SP500 <span class="signal-bull">▲ BULL</span> → -1.06% &nbsp; <span class="tier-badge tier1">T1</span>德国 DAX <span class="signal-bull">▲ BULL</span> → -0.43% &nbsp; <span class="tier-badge tier2">T2</span>恒生指数 <span class="signal-bull">▲ BULL</span> → -9.14%</p></div></div>
+            <div class="acc-block"><h4 style="color:#888">─ 无方向/平盘 (1)</h4><div class="neutral-list"><p><span class="tier-badge tier2">T2</span>中国 A股 <span class="signal-neut">─ NEUT</span> → +0.63%</p></div></div>
+        </div>
+
+        <div style="margin-top:16px;overflow-x:auto">
+            <table class="predict-table" style="min-width:600px">
+                <thead><tr>
+                    <th>市场</th><th>预测</th><th>6月实际方向</th><th>6月涨跌%</th><th>结果</th>
+                </tr></thead>
+                <tbody>
+    <tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 印度 NIFTY</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +1.35%</span></td><td>+1.35%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 英国 FTSE</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +0.84%</span></td><td>+0.84%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 澳洲 ASX</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +0.54%</span></td><td>+0.54%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 法国 CAC40</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +2.70%</span></td><td>+2.70%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 意大利 MIB</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +3.29%</span></td><td>+3.29%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(76,175,80,0.04)"><td><span class="tier-badge tier1">T1</span> 日经 225</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#4caf50">▲ UP +5.63%</span></td><td>+5.63%</td><td><span style="color:#4caf50">✅ 正确</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 韩国 KOSPI</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#888">─ FLAT (+0.00%)</span></td><td>+0.00%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 加拿大 TSX</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#888">─ FLAT (+0.25%)</span></td><td>+0.25%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 美国 SP500</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#f44336">▼ DOWN -1.06%</span></td><td>-1.06%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier1">T1</span> 德国 DAX</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#f44336">▼ DOWN -0.43%</span></td><td>-0.43%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr style="background:rgba(244,67,54,0.04)"><td><span class="tier-badge tier2">T2</span> 恒生指数</td><td><span class="signal-bull">▲ BULL</span></td><td><span style="color:#f44336">▼ DOWN -9.14%</span></td><td>-9.14%</td><td><span style="color:#f44336">❌ 错误</span></td></tr>
+<tr ><td><span class="tier-badge tier2">T2</span> 中国 A股</td><td><span class="signal-neut">─ NEUT</span></td><td><span style="color:#888">▲ UP (+0.63%)</span></td><td>+0.63%</td><td><span style="color:#888">─ 无方向/平盘</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top:20px;padding:16px;background:rgba(244,67,54,0.05);border-radius:10px;border:1px solid rgba(244,67,54,0.1)">
+            <p style="font-size:13px;color:#aaa;margin:0">
+                <span style="color:#f44336;font-weight:700">▸ 月度总结：月度预测精准度有待提升</span>
+                高 EPU 持续环境下月度预测面临更大挑战——月度级别趋势延续模式的置信度低于周度。恒生指数月度跌幅 -9.14% 为最大预测失误，主要受港股特定政策风险（非 EPU 可捕获）影响。美国 SP500 (-1.06%) 和德国 DAX (-0.43%) 的月度下跌与 EPU 高位回调规律一致。
+            </p>
+        </div>
+    </div>
+    
+    <h2 class="section-title">🔮 本周预测 (2026年第31周 (7/27-8/2))</h2>
 
     <div class="metric-grid">
         <div class="metric">
-            <div class="lbl">EPU 政策不确定性</div>
-            <div class="val" style="color:#f44336">350 <span style="font-size:11px;color:#888">P99.1</span></div>
-            <div style="font-size:10px;color:#888;margin-top:4px">⚠ 高不确定性</div>
+            <div class="lbl">EPU 策略不确定性</div>
+            <div class="val" style="color:#f44336">350.1<span style="font-size:11px;color:#888"> P99.1</span></div>
+            <div style="font-size:10px;color:#888;margin-top:4px">⚠ 极高不确定性 → 趋势延续模式</div>
         </div>
-        
+        <div class="metric">
+            <div class="lbl">中国 EPU</div>
+            <div class="val" style="font-size:20px;color:#ff9800">352.3</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">中EPU高 → 趋势延续</div>
+        </div>
         <div class="metric">
             <div class="lbl">Tier 1 高置信度</div>
             <div class="val" style="color:#4caf50">10 市场</div>
@@ -80,66 +268,214 @@ footer{text-align:center;padding:32px 0;color:#444;font-size:12px;border-top:1px
         <div class="metric">
             <div class="lbl">Tier 2 参考</div>
             <div class="val" style="color:#ff9800">3 市场</div>
-            <div style="font-size:10px;color:#888;margin-top:4px">55-70% · 1年以内</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">55-70% · 仅供参考</div>
         </div>
         
-    <div class="metric">
-        <div class="lbl">上期实际命中率</div>
-        <div class="val" style="color:#f44336">22%</div>
-        <div style="font-size:10px;color:#888;margin-top:4px">2/9 方向正确</div>
-    </div>
         <div class="metric">
-            <div class="lbl">信号分布</div>
-            <div class="val" style="font-size:16px">
-                <span style="color:#4caf50">▲8</span>
-                <span style="color:#ff9800;margin-left:8px">─5</span>
-                <span style="color:#f44336;margin-left:8px">▼0</span>
-            </div>
-            <div style="font-size:10px;color:#888;margin-top:4px">BULL / NEUT / BEAR</div>
+            <div class="lbl">滚动4周实际准确率</div>
+            <div class="val" style="color:#f44336">32%</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">13/41 方向正确</div>
+            <div style="font-size:10px;color:#888;margin-top:2px">Tier1 滚动 34%</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">滚动4周明细</div>
+            <div class="val" style="font-size:12px;line-height:1.4"><span style="color:#f44336">2026年第31周 (7/27-8/2): 22% (2/9)</span> · <span style="color:#f44336">2026年第30周 (7/20-7/26): 22% (2/9)</span> · <span style="color:#f44336">2026年第29周 (7/13-7/19): 27% (3/11)</span> · <span style="color:#f44336">2026年第28周 (7/6-7/12): 50% (6/12)</span></div>
+            <div style="font-size:10px;color:#888;margin-top:4px">← 旧 | 新 →</div>
+        </div>
+        <div class="metric" style="border:1px solid rgba(244,67,54,0.3)">
+            <div class="lbl">制度偏离市场数</div>
+            <div class="val" style="font-size:18px;color:#f44336">2🔴 4⚠</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">强制NEUT · 陌生制度</div>
+        </div>
+        <div class="metric">
+            <div class="lbl">数据快照</div>
+            <div class="val" style="font-size:14px;color:#4facfe;font-family:monospace">2026-07-25 16:12 CST</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">3-Factor Kalman DFM</div>
         </div>
     </div>
 
     
     <div class="hk-section">
         <h3>🇭🇰 港股预测</h3>
-        <table class="predict-table">
-            <thead><tr>
-                <th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th>
-                <th style="text-align:right">准确率</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th>
-                <th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
-            </tr></thead>
-            <tbody><tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-em">EM</span> 恒生指数</td><td style="padding:6px 8px"><span class="signal-neut">─ NEUT</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#f44336">-6.2%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">76.9%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.79σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.61σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.40σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">1.1</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="情绪BULLISH→NEUT | 中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖">情绪BULLISH→NEUT | 中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖</td></tr></tbody>
-        </table>
+        <p style="font-size:13px;color:#888;margin-bottom:12px">
+            恒生指数已升级为 Tier 1 级别（准确率 76.9%），China EPU 制度切换显著提升预测精度（从 66.7% → 76.9%）。
+            BULL 信号较为可靠，但需关注中美政策边际变化及南向资金流向。
+        </p>
     </div>
 
-    <h3 style="font-size:15px;color:#4caf50;margin-bottom:16px;">★★★ Tier 1 — 高置信度 (≥70%)</h3>
-    <p style="font-size:11px;color:#666;margin-top:-8px;margin-bottom:8px">回测=全量历史 | 5年=近5年滚动</p>
-    <table class="predict-table">
-        <thead><tr>
-            <th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th>
-            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
+    <h3 style="font-size:15px;color:#4caf50;margin-bottom:16px;">★★★ Tier 1 — 高置信度 (≥70% 准确率)</h3>
+    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">置信度=回测 | 5年=近5年滚动 | 滚动=近4周实际 | 情绪=独立因子 | 制度σ=马氏距离 | YTD=年初至今 | 周变=上周变化</p>
+	    <div style="overflow-x:auto">
+	    <table class="predict-table" style="min-width:1400px">
+	        <thead><tr>
+	            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
+	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">制度σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th style="text-align:center">情绪</th><th>诊断</th>
         </tr></thead>
-        <tbody><tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 加拿大 TSX</td><td style="padding:6px 8px"><span class="signal-neut">─ NEUT</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+15.2%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">84.7%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+1.10σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.76σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.30σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">1.5 ⚠</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | ⚠ 陌生制度(D=1.5σ)">平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | ⚠ 陌生制度(D=1.5σ)</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-em">EM</span> 印度 NIFTY</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+27.9%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">84.2%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-1.22σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+1.08σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.84σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">1.3</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | 高波动">EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | 高波动</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 美国 SP500</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+13.7%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">80.5%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.40σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.22σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.67σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">1.1</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性 | 低波动">EPU高→高政策不确定性 | 低波动</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-em">EM</span> 韩国 KOSPI</td><td style="padding:6px 8px"><span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+20.6%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">79.3%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+3.08σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-2.93σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-1.25σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#f44336;font-weight:700">3.9 🔴</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="⚠ 制度极端偏离(D=3.9σ)→NEUT | EPU高→高政策不确定性">⚠ 制度极端偏离(D=3.9σ)→NEUT | EPU高→高政策不确定性</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 法国 CAC40</td><td style="padding:6px 8px"><span class="signal-neut">─ NEUT</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+7.3%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">77.8%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.02σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.04σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.35σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">0.4</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性">平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-em">EM</span> 恒生指数</td><td style="padding:6px 8px"><span class="signal-neut">─ NEUT</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#f44336">-6.2%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">76.9%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.79σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.61σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.40σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">1.1</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="情绪BULLISH→NEUT | 中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖">情绪BULLISH→NEUT | 中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 德国 DAX</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+11.9%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">76.3%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.21σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.29σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.24σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">0.6</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性">EPU高→高政策不确定性</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 日经 225</td><td style="padding:6px 8px"><span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+12.3%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">73.2%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+2.31σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-1.93σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.89σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#f44336;font-weight:700">3.2 🔴</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="⚠ 制度极端偏离(D=3.2σ)→NEUT | EPU高→高政策不确定性">⚠ 制度极端偏离(D=3.2σ)→NEUT | EPU高→高政策不确定性</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 澳洲 ASX</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+4.9%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">72.7%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.36σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.29σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.46σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">0.7</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性">EPU高→高政策不确定性</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier1">T1</span><span class="group-badge group-dm">DM</span> 英国 FTSE</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+7.9%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">72.2%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">100.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.72σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.48σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.72σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">1.5 ⚠</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性 | 趋势偏强 | 高波动 | ⚠ 陌生制度(D=1.5σ)">EPU高→高政策不确定性 | 趋势偏强 | 高波动 | ⚠ 陌生制度(D=1.5σ)</td></tr></tbody>
+        <tbody>
+    <tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>加拿大 TSX</td><td><span class="signal-neut">─ NEUT</span></td><td style="text-align:right"><span style="color:#4caf50">+15.25%</span></td><td style="text-align:right;font-size:12px;color:#888">84.7%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">100.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">0%</span></td><td style="text-align:right;font-size:12px;color:#888">+1.10σ</td><td style="text-align:right;font-size:12px;color:#888">-0.76σ</td><td style="text-align:right;font-size:12px;color:#888">-0.30σ</td><td style="text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">1.5 ⚠</span></td><td style="text-align:right"><span style="color:#4caf50">+10.55%</span></td><td style="text-align:right"><span style="color:#4caf50">+0.18%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">⚠ 陌生制度(D=1.5)</span> <span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">平盘→NEUT</span> 平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | ⚠ 陌生制度(D=1.5σ)</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>印度 NIFTY</td><td><span class="signal-bull">▲ BULL</span></td><td style="text-align:right"><span style="color:#4caf50">+27.86%</span></td><td style="text-align:right;font-size:12px;color:#888">84.2%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">33%</span></td><td style="text-align:right;font-size:12px;color:#888">-1.22σ</td><td style="text-align:right;font-size:12px;color:#888">+1.08σ</td><td style="text-align:right;font-size:12px;color:#888">-0.84σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">1.3</span></td><td style="text-align:right"><span style="color:#f44336">-7.82%</span></td><td style="text-align:right"><span style="color:#4caf50">+1.30%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="oversold-tag">偏卖</span> EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | 高波动</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>美国 SP500</td><td><span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span></td><td style="text-align:right"><span style="color:#4caf50">+13.69%</span></td><td style="text-align:right;font-size:12px;color:#888">80.5%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">100.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">33%</span></td><td style="text-align:right;font-size:12px;color:#888">+0.40σ</td><td style="text-align:right;font-size:12px;color:#888">-0.22σ</td><td style="text-align:right;font-size:12px;color:#888">+0.67σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">1.1</span></td><td style="text-align:right"><span style="color:#4caf50">+9.11%</span></td><td style="text-align:right"><span style="color:#f44336">N/A</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666">P99 EPU极端→NEUT (|pred|<15%) | 低信念→NEUT | EPU高→高政策不确定性 | 低波动</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>韩国 KOSPI</td><td><span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span></td><td style="text-align:right"><span style="color:#4caf50">+20.57%</span></td><td style="text-align:right;font-size:12px;color:#888">79.3%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:600">67%</span></td><td style="text-align:right;font-size:12px;color:#888">+3.08σ</td><td style="text-align:right;font-size:12px;color:#888">-2.93σ</td><td style="text-align:right;font-size:12px;color:#888">-1.25σ</td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:700">3.9 🔴</span></td><td style="text-align:right"><span style="color:#4caf50">+87.68%</span></td><td style="text-align:right"><span style="color:#f44336">-7.80%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(244,67,54,0.15);color:#f44336">🔴 制度偏离→NEUT</span> <span class="overheat-tag">⚠过热</span> <span class="overheat-tag">偏热</span> ⚠ 制度极端偏离(D=3.9σ)→NEUT | EPU高→高政策不确定性</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>法国 CAC40</td><td><span class="signal-neut">─ NEUT</span></td><td style="text-align:right"><span style="color:#4caf50">+7.31%</span></td><td style="text-align:right;font-size:12px;color:#888">77.8%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">25%</span></td><td style="text-align:right;font-size:12px;color:#888">+0.02σ</td><td style="text-align:right;font-size:12px;color:#888">+0.04σ</td><td style="text-align:right;font-size:12px;color:#888">-0.35σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">0.4</span></td><td style="text-align:right"><span style="color:#4caf50">+3.82%</span></td><td style="text-align:right"><span style="color:#4caf50">+1.28%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">平盘→NEUT</span> 平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>恒生指数</td><td><span class="signal-neut">─ NEUT</span></td><td style="text-align:right"><span style="color:#f44336">-6.24%</span></td><td style="text-align:right;font-size:12px;color:#888">76.9%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">100.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#4caf50;font-weight:600">100%</span></td><td style="text-align:right;font-size:12px;color:#888">-0.79σ</td><td style="text-align:right;font-size:12px;color:#888">+0.61σ</td><td style="text-align:right;font-size:12px;color:#888">-0.40σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">1.1</span></td><td style="text-align:right"><span style="color:#f44336">-11.35%</span></td><td style="text-align:right"><span style="color:#4caf50">+1.81%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666">情绪BULLISH→NEUT | 中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>德国 DAX</td><td><span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span></td><td style="text-align:right"><span style="color:#4caf50">+11.88%</span></td><td style="text-align:right;font-size:12px;color:#888">76.3%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">100.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">25%</span></td><td style="text-align:right;font-size:12px;color:#888">-0.21σ</td><td style="text-align:right;font-size:12px;color:#888">+0.29σ</td><td style="text-align:right;font-size:12px;color:#888">+0.24σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">0.6</span></td><td style="text-align:right"><span style="color:#4caf50">+5.05%</span></td><td style="text-align:right"><span style="color:#4caf50">+4.20%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666">P99 EPU极端→NEUT (|pred|<15%) | 低信念→NEUT | EPU高→高政策不确定性</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>日经 225</td><td><span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span></td><td style="text-align:right"><span style="color:#4caf50">+12.33%</span></td><td style="text-align:right;font-size:12px;color:#888">73.2%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">100.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">0%</span></td><td style="text-align:right;font-size:12px;color:#888">+2.31σ</td><td style="text-align:right;font-size:12px;color:#888">-1.93σ</td><td style="text-align:right;font-size:12px;color:#888">-0.89σ</td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:700">3.2 🔴</span></td><td style="text-align:right"><span style="color:#4caf50">+34.56%</span></td><td style="text-align:right"><span style="color:#f44336">-1.34%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(244,67,54,0.15);color:#f44336">🔴 制度偏离→NEUT</span> <span class="overheat-tag">⚠过热</span> <span class="overheat-tag">偏热</span> ⚠ 制度极端偏离(D=3.2σ)→NEUT | EPU高→高政策不确定性</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>澳洲 ASX</td><td><span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span></td><td style="text-align:right"><span style="color:#4caf50">+4.92%</span></td><td style="text-align:right;font-size:12px;color:#888">72.7%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">0%</span></td><td style="text-align:right;font-size:12px;color:#888">-0.36σ</td><td style="text-align:right;font-size:12px;color:#888">+0.29σ</td><td style="text-align:right;font-size:12px;color:#888">-0.46σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">0.7</span></td><td style="text-align:right"><span style="color:#4caf50">+1.34%</span></td><td style="text-align:right"><span style="color:#f44336">-1.12%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666">P99 EPU极端→NEUT (|pred|<15%) | 低信念→NEUT | EPU高→高政策不确定性</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier1">T1</span>英国 FTSE</td><td><span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span></td><td style="text-align:right"><span style="color:#4caf50">+7.88%</span></td><td style="text-align:right;font-size:12px;color:#888">72.2%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">100.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">50%</span></td><td style="text-align:right;font-size:12px;color:#888">+0.72σ</td><td style="text-align:right;font-size:12px;color:#888">-0.48σ</td><td style="text-align:right;font-size:12px;color:#888">-0.72σ</td><td style="text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">1.5 ⚠</span></td><td style="text-align:right"><span style="color:#4caf50">+7.31%</span></td><td style="text-align:right"><span style="color:#4caf50">+1.38%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">⚠ 陌生制度(D=1.5)</span> P99 EPU极端→NEUT (|pred|<15%) | 低信念→NEUT | EPU高→高政策不确定性 | 趋势偏强 | 高波动 | ⚠ 陌生制度(D=1.5σ)</td></tr>
+        </tbody>
     </table>
+    </div>
 
-    <h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70%)</h3><table class="predict-table"><thead><tr><th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th><th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th></tr></thead><tbody><tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier2">T2</span><span class="group-badge group-em">EM</span> 巴西 Bovespa</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+18.7%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">63.6%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.04σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.21σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.77σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#666">1.3</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性 | 高波动">EPU高→高政策不确定性 | 高波动</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier2">T2</span><span class="group-badge group-dm">DM</span> 意大利 MIB</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+13.3%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">50.6%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+1.34σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-1.12σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.67σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">2.0 ⚠</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | ⚠ 陌生制度(D=2.0σ)">EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | ⚠ 陌生制度(D=2.0σ)</td></tr>
-<tr><td style="padding:6px 8px;font-size:13px"><span class="tier-badge tier2">T2</span><span class="group-badge group-em">EM</span> 中国 A股</td><td style="padding:6px 8px"><span class="signal-bull">▲ BULL</span></td><td style="padding:6px 8px;text-align:right"><span style="color:#4caf50">+10.8%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">47.2%</td><td style="padding:6px 8px;text-align:right;font-size:11px"><span style="color:#888;">75.0%</span></td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.04σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">+0.30σ</td><td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">-0.80σ</td><td style="padding:6px 8px;text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">2.2 ⚠</span></td><td style="padding:6px 8px;text-align:center"><span style="color:#4caf50;font-size:10px">↗</span></td><td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="EPU高→高政策不确定性 | 高波动 | ⚠ 陌生制度(D=2.2σ)">EPU高→高政策不确定性 | 高波动 | ⚠ 陌生制度(D=2.2σ)</td></tr></tbody></table>
+    <h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70% 准确率)</h3>
+    <div style="overflow-x:auto">
+	    <table class="predict-table" style="min-width:1400px">
+	        <thead><tr>
+	            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
+	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">制度σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th style="text-align:center">情绪</th><th>诊断</th>
+        </tr></thead>
+        <tbody>
+    <tr class=""><td style="font-size:13px"><span class="tier-badge tier2">T2</span>巴西 Bovespa</td><td><span class="signal-bull">▲ BULL</span></td><td style="text-align:right"><span style="color:#4caf50">+18.73%</span></td><td style="text-align:right;font-size:12px;color:#888">63.6%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">33%</span></td><td style="text-align:right;font-size:12px;color:#888">+0.04σ</td><td style="text-align:right;font-size:12px;color:#888">+0.21σ</td><td style="text-align:right;font-size:12px;color:#888">-0.77σ</td><td style="text-align:right;font-size:12px"><span style="color:#666">1.3</span></td><td style="text-align:right"><span style="color:#4caf50">+8.55%</span></td><td style="text-align:right"><span style="color:#f44336">-0.29%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666">EPU高→高政策不确定性 | 高波动</td></tr>
+<tr class=""><td style="font-size:13px"><span class="tier-badge tier2">T2</span>意大利 MIB</td><td><span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span></td><td style="text-align:right"><span style="color:#4caf50">+13.33%</span></td><td style="text-align:right;font-size:12px;color:#888">50.6%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">25%</span></td><td style="text-align:right;font-size:12px;color:#888">+1.34σ</td><td style="text-align:right;font-size:12px;color:#888">-1.12σ</td><td style="text-align:right;font-size:12px;color:#888">-0.67σ</td><td style="text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">2.0 ⚠</span></td><td style="text-align:right"><span style="color:#4caf50">+16.41%</span></td><td style="text-align:right"><span style="color:#4caf50">+2.59%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">⚠ 陌生制度(D=2.0)</span> P99 EPU极端→NEUT (|pred|<15%) | 低信念→NEUT | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | ⚠ 陌生制度(D=2.0σ)</td></tr>
+<tr class=" cn-row"><td style="font-size:13px"><span class="tier-badge tier2">T2</span>中国 A股<span class="cn-note">⚠ 仅供参考</span></td><td><span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span></td><td style="text-align:right"><span style="color:#4caf50">+10.76%</span></td><td style="text-align:right;font-size:12px;color:#888">47.2%</td><td style="text-align:right;font-size:12px;color:#888"><span style="color:#888;">75.0%</span></td><td style="text-align:right;font-size:12px"><span style="color:#f44336;font-weight:600">33%</span></td><td style="text-align:right;font-size:12px;color:#888">+0.04σ</td><td style="text-align:right;font-size:12px;color:#888">+0.30σ</td><td style="text-align:right;font-size:12px;color:#888">-0.80σ</td><td style="text-align:right;font-size:12px"><span style="color:#ff9800;font-weight:700">2.2 ⚠</span></td><td style="text-align:right"><span style="color:#4caf50">+0.50%</span></td><td style="text-align:right"><span style="color:#4caf50">+0.12%</span></td><td style="text-align:center"><span style="color:#4caf50;font-size:10px">↗ 看好</span></td><td style="font-size:11px;color:#666"><span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">⚠ 陌生制度(D=2.2)</span> P99 EPU极端→NEUT (|pred|<15%) | 低信念→NEUT | EPU高→高政策不确定性 | 高波动 | ⚠ 陌生制度(D=2.2σ)</td></tr>
+        </tbody>
+    </table>
+    </div>
+    <p style="font-size:11px;color:#555;margin-top:4px;margin-bottom:24px">⚠ Tier 2 市场准确率较低（55-70%），追踪历史 ≤ 1 年，仅供观察参考。A股数据来源于 akshare，受政策与流动性影响较大。恒生指数受中美关系及全球流动性影响显著。</p>
+
+    <h3 style="font-size:15px;color:#e0e0e0;margin-top:40px;margin-bottom:8px;">📊 YTD 表现对比 (截至 2026-07-03)</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:16px">各市场年初至今实际涨跌幅 · 绿色=正收益 · 红色=负收益 · 柱宽按最大绝对值等比例缩放</p>
+    <div class="ytd-chart" style="max-width:700px">
+    <div class="ytd-row"><div class="ytd-label">韩国 KOSPI</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:100.0%">+87.68%</div></div><div class="ytd-val" style="color:#4caf50">+87.68%</div></div>
+<div class="ytd-row"><div class="ytd-label">日经 225</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:39.4%">+34.56%</div></div><div class="ytd-val" style="color:#4caf50">+34.56%</div></div>
+<div class="ytd-row"><div class="ytd-label">意大利 MIB</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:18.7%">+16.41%</div></div><div class="ytd-val" style="color:#4caf50">+16.41%</div></div>
+<div class="ytd-row"><div class="ytd-label">恒生指数</div><div class="ytd-bar-wrap"><div class="ytd-bar negative" style="width:12.9%">-11.35%</div></div><div class="ytd-val" style="color:#f44336">-11.35%</div></div>
+<div class="ytd-row"><div class="ytd-label">加拿大 TSX</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:12.0%">+10.55%</div></div><div class="ytd-val" style="color:#4caf50">+10.55%</div></div>
+<div class="ytd-row"><div class="ytd-label">美国 SP500</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:10.4%">+9.11%</div></div><div class="ytd-val" style="color:#4caf50">+9.11%</div></div>
+<div class="ytd-row"><div class="ytd-label">巴西 Bovespa</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:9.8%">+8.55%</div></div><div class="ytd-val" style="color:#4caf50">+8.55%</div></div>
+<div class="ytd-row"><div class="ytd-label">印度 NIFTY</div><div class="ytd-bar-wrap"><div class="ytd-bar negative" style="width:8.9%">-7.82%</div></div><div class="ytd-val" style="color:#f44336">-7.82%</div></div>
+<div class="ytd-row"><div class="ytd-label">英国 FTSE</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:8.3%">+7.31%</div></div><div class="ytd-val" style="color:#4caf50">+7.31%</div></div>
+<div class="ytd-row"><div class="ytd-label">德国 DAX</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:5.8%">+5.05%</div></div><div class="ytd-val" style="color:#4caf50">+5.05%</div></div>
+<div class="ytd-row"><div class="ytd-label">法国 CAC40</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:4.4%">+3.82%</div></div><div class="ytd-val" style="color:#4caf50">+3.82%</div></div>
+<div class="ytd-row"><div class="ytd-label">澳洲 ASX</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:1.5%">+1.34%</div></div><div class="ytd-val" style="color:#4caf50">+1.34%</div></div>
+<div class="ytd-row"><div class="ytd-label">中国 A股</div><div class="ytd-bar-wrap"><div class="ytd-bar positive" style="width:0.6%">+0.50%</div></div><div class="ytd-val" style="color:#4caf50">+0.50%</div></div>
+    </div>
+
+    <h3 style="font-size:15px;color:#f7971e;margin-top:40px;margin-bottom:16px;">⚡ 本周关键判断</h3>
+    <div class="card">
+        <div class="grid-2">
+            <div>
+                <h4 style="font-size:14px;color:#4caf50;margin-bottom:8px">🌍 全球共识：分化开始</h4>
+                <p style="font-size:13px;color:#aaa;line-height:1.7">
+                    EPU 当前值 <strong style="color:#f44336">350.1 (P99.1)</strong>，处于历史极端高位。
+                    模型在所有市场统一触发 <strong>趋势延续模式</strong>，但过热保护机制在部分市场激活。
+                    Tier 1 中 1 BULL + 0 BEAR + 9 NEUT；
+                    Tier 2 中 1 BULL + 2 NEUT。
+                    韩国 KOSPI 因极端过热（tm=+3.77σ）触发 BEAR 信号；
+                    日经 225 因过热（tm=+2.53σ）转为 NEUT；
+                    中国 A股降至 NEUT。
+                    全球化与分化的关键转折——极度超买市场的风险信号正在显现。
+                    中国EPU 为 352.3，对恒生指数和中国A股的影响显著。
+                </p>
+            </div>
+            <div>
+                <h4 style="font-size:14px;color:#f44336;margin-bottom:8px">⚠ 过热警告</h4>
+                <p style="font-size:13px;color:#aaa;line-height:1.7">
+                    以下市场出现极端技术与估值信号：
+                </p>
+                <ul style="font-size:12px;color:#aaa;line-height:1.8;margin-top:8px;padding-left:18px">
+                    <li><span style="color:#ff9800">加拿大 TSX</span>：趋势 +1.10σ — <strong><span style="color:#ff9800">趋于超买</span></strong></li>
+<li><span style="color:#f44336">韩国 KOSPI</span>：趋势 +3.08σ|反转 -2.93σ — <strong><span style="color:#f44336">极度超买</span></strong></li>
+<li><span style="color:#ff9800">日经 225</span>：趋势 +2.31σ|反转 -1.93σ — <strong><span style="color:#ff9800">趋于超买</span></strong></li>
+<li><span style="color:#ff9800">意大利 MIB</span>：趋势 +1.34σ|反转 -1.12σ — <strong><span style="color:#ff9800">趋于超买</span></strong></li>
+                </ul>
+            </div>
+        </div>
+        <div style="margin-top:20px">
+            <h4 style="font-size:14px;color:#4facfe;margin-bottom:8px">📈 EPU 趋势与模式预期</h4>
+            <p style="font-size:13px;color:#aaa;line-height:1.7">
+                EPU 自 5 月以来维持在 350 附近（P90+），无回落迹象，当前百分位为 <strong>P99.1</strong>。
+                若 EPU 维持当前水平，趋势延续模式将继续主导预测，全球市场 BULL 信号将延续。
+                <strong>关键观察点：</strong>若 EPU 回落至 P75 以下（约 &lt;200），模型将切换回均值回归模式，
+                届时超买市场（韩国、日本）可能出现显著反转信号。
+                当前建议：关注 Tier 1 高置信度市场，对超买市场谨慎追高。
+            </p>
+        </div>
+    </div>
+    
+    <h2 class="section-title">🔭 下周展望 (第28周 7/6-7/12)</h2>
+    <div class="outlook-card">
+        <h3>📡 基于 EPU 极端高位的 W28 市场前瞻</h3>
+        <p style="font-size:13px;color:#aaa;line-height:1.7;margin-bottom:16px">
+            当前 EPU = <strong style="color:#f44336">350.1 (P99.1)</strong>，处于历史极端高位区间。
+            根据模型的历史行为分析，当 EPU 超过 90 百分位时：
+        </p>
+        
+        <div class="grid-2" style="margin-bottom:16px">
+            <div>
+                <h4 style="font-size:14px;color:#4caf50;margin-bottom:8px">📈 历史上 EPU > P90 时的市场行为</h4>
+                <ul style="font-size:12px;color:#aaa;line-height:1.8;padding-left:18px">
+                    <li><strong>趋势延续</strong>：市场倾向于维持原有趋势方向，反转概率降低</li>
+                    <li><strong>波动加剧</strong>：VIX 类指标上升，单日大幅波动概率增加</li>
+                    <li><strong>板块分化</strong>：防御性板块与周期性板块表现差距拉大</li>
+                    <li><strong>新兴市场承压</strong>：资金倾向于回流发达市场</li>
+                </ul>
+            </div>
+            <div>
+                <h4 style="font-size:14px;color:#f44336;margin-bottom:8px">⚠ 高EPU环境下的预测局限性</h4>
+                <ul style="font-size:12px;color:#aaa;line-height:1.8;padding-left:18px">
+                    <li>模型在极端 EPU 区域样本量较少，预测不确定性增大</li>
+                    <li>政策突发变量（关税、制裁、地缘冲突）无法被模型捕获</li>
+                    <li>市场可能对 EPU 产生"适应性"，历史规律不完全适用</li>
+                    <li>超买信号在高 EPU 下被压制，回调风险累积</li>
+                </ul>
+            </div>
+        </div>
+
+        <h4 style="font-size:14px;color:#4facfe;margin-bottom:8px">🎯 W28 关注点</h4>
+        <div class="grid-2">
+            <div>
+                <ul style="font-size:12px;color:#aaa;line-height:1.8;padding-left:18px">
+                    <li><span style="color:#4facfe">美联储动向</span>：关注 7 月 FOMC 会议纪要与官员讲话</li>
+                    <li><span style="color:#4facfe">全球贸易政策</span>：关税谈判进展、贸易协议动态</li>
+                    <li><span style="color:#4facfe">地缘政治</span>：中东、东欧局势对能源与供应链的影响</li>
+                </ul>
+            </div>
+            <div>
+                <ul style="font-size:12px;color:#aaa;line-height:1.8;padding-left:18px">
+                    <li><span style="color:#4facfe">通胀数据</span>：各国 CPI/PPI 发布对政策预期的影响</li>
+                    <li><span style="color:#4facfe">技术面</span>：韩国 KOSPI、日经 225 超买信号是否触发回调</li>
+                    <li><span style="color:#4facfe">流动性</span>：季末资金面变化对新兴市场的影响</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="warning-box">
+            <p><strong>⚠ 风险提示：</strong>
+            高 EPU（P99.1）环境下，模型的趋势延续模式虽然历史表现稳健，但极端政治经济环境可能引发非线性市场反应。
+            不建议在此阶段过度集中于单一市场或方向，尤其是已出现极端超买信号的韩国（趋势 +3.77σ）和日本（趋势 +2.53σ）市场。
+            下周重点关注 EPU 是否出现拐点信号，若 EPU 回落至 250 以下，部分市场的均值回归压力将显著释放。
+            韩国 KOSPI W27 周跌 -7.80%，已开始超买回调，需持续关注。
+            </p>
+        </div>
+    </div>
 
     <div class="insight-box" style="margin-top:32px">
-        <p>💡 <strong>模型说明：</strong>3-factor (趋势+回归+波动率) 线性模型 + 分市场制度切换 (EM P65 / DM P75)。
-        VIX 作为 EPU 日频代理辅助判断不确定性。过热检测：因子 z-score &gt; +2.5σ → NEUT，&gt; +3.5σ → BEAR。
-        Tier 1 市场（≥70% 回测准确率）可作配置参考，Tier 2 市场仅作观察。
-        数据来源：yfinance / FRED / akshare · 模型：Global Economy Lab</p>
+        <p>💡 <strong>模型说明：</strong>3-factor Kalman DFM（趋势+均值回归+波动率）提取方向和幅度两个潜因子，EPU > P75 时自动切换为趋势延续模式。
+        恒生指数和中国A股使用中国 EPU（CHNMAINLANDEPU）作为制度开关，HSI 准确率从 66.7% 提升至 76.9%。
+        Tier 1 市场（≥70% 回测准确率，≥5年历史数据）可用于配置参考；Tier 2 市场（55-70%，≤1年追踪）仅供观察。
+        预测收益率为年化估算，不代表短期走势。模型基于过去 5 年滚动窗口回测验证。
+        数据来源：yfinance / FRED / akshare · 模型：Global Economy Lab · 
+        <strong>预测周期：2026年第31周 (7/27-8/2) · 生成时间：2026-07-25 16:12 CST</strong></p>
+    </div>
+
+    <div style="text-align:center;margin-top:24px;font-size:11px;color:#444">
+        <span class="ts-stamp">第31周存档</span>
+        <span style="margin:0 8px">|</span>
+        <span>上周准确率 Tier1: 55.6% | Tier2: 33.3%</span>
+        <span style="margin:0 8px">|</span>
+        <span>月度准确率 Tier1: 60.0% | Tier2: 0.0%</span>
+        <span style="margin:0 8px">|</span>
+        <span>EPU: 350.1 (P99.1 · HIGH_EPU 制度)</span>
     </div>
 </div>
 <footer>GingerFamily.CN · Global Economy Lab 驱动 · 数据仅供参考不构成投资建议</footer>

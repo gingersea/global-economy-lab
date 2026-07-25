@@ -213,6 +213,14 @@ h2.section-title{{font-size:18px;font-weight:700;margin:36px 0 20px;color:#e0e0e
 .outlook-card h3{{color:#4facfe;font-size:18px;margin-bottom:16px}}
 .warning-box{{background:rgba(244,67,54,0.08);border:1px solid rgba(244,67,54,0.2);border-radius:10px;padding:16px;margin-top:16px}}
 .warning-box p{{font-size:13px;color:#f44336;margin:0;line-height:1.6}}
+.epu-alert{{background:linear-gradient(135deg,rgba(244,67,54,0.12),rgba(255,152,0,0.06));border:1px solid rgba(244,67,54,0.35);border-radius:12px;padding:20px 24px;margin:0 0 24px 0;text-align:center}}
+.epu-alert .epu-alert-icon{{font-size:22px;margin-bottom:6px}}
+.epu-alert .epu-alert-title{{font-size:14px;font-weight:700;color:#f44336;margin-bottom:8px}}
+.epu-alert .epu-alert-body{{font-size:12px;color:#e57373;line-height:1.7;max-width:800px;margin:0 auto}}
+.epu-alert .epu-alert-stats{{display:flex;justify-content:center;gap:24px;margin-top:10px;flex-wrap:wrap}}
+.epu-alert .epu-alert-stat{{background:rgba(0,0,0,0.2);border-radius:8px;padding:8px 14px}}
+.epu-alert .epu-alert-stat .v{{font-size:18px;font-weight:800;color:#ff5252}}
+.epu-alert .epu-alert-stat .l{{font-size:10px;color:#e57373}}
 @media(max-width:600px){{.review-card .summary-stats{{flex-direction:column;gap:8px}}.review-card .stat{{min-width:unset}}}}
 </style>{extra_css}</head><body>
 <nav>
@@ -1034,7 +1042,43 @@ def main():
     gen_time = cur_pred["generated_display"]
     period = cur_pred.get("prediction_period", f"{year}年第{week_num}周")
     epu = cur_pred["epu"]
-    
+
+    # EPU P95+ extreme-regime warning
+    epu_percentile = epu.get("percentile", 0)
+    epu_alert_html = ""
+    if epu_percentile >= 95:
+        acc = cur_pred.get("actual_accuracy", {})
+        hit_rate = acc.get("hit_rate", 0)
+        hits = acc.get("hits", 0)
+        total = acc.get("total_scored", 0)
+        signals = cur_pred.get("signal_distribution", {})
+        total_sig = max(sum(signals.values()), 1)
+        bull_pct = signals.get("BULL", 0) / total_sig * 100
+        backtest_avg = sum(m.get("accuracy", 0) for m in cur_pred.get("markets", [])) / max(len(cur_pred.get("markets", [])), 1)
+        epu_alert_html = f"""<div class="epu-alert">
+            <div class="epu-alert-icon">WARNING</div>
+            <div class="epu-alert-title">Model Reliability Warning: EPU P{epu_percentile:.0f} Extreme Regime</div>
+            <div class="epu-alert-body">
+                Economic Policy Uncertainty at P{epu_percentile:.0f} historically. Model has insufficient training samples in this regime (P95+ &lt;5% of training data).
+                Three consecutive weeks of actual accuracy far below backtest levels. All signal confidence is degraded under extreme EPU conditions.
+                Cross-validate with fundamental analysis, technical indicators, and macro data. Do not rely solely on model signals for allocation decisions.
+            </div>
+            <div class="epu-alert-stats">
+                <div class="epu-alert-stat">
+                    <div class="l">Last Week Actual</div>
+                    <div class="v">{hits}/{total} = {hit_rate:.0%}</div>
+                </div>
+                <div class="epu-alert-stat">
+                    <div class="l">Long-term Backtest Avg</div>
+                    <div class="v">{backtest_avg:.0%}</div>
+                </div>
+                <div class="epu-alert-stat">
+                    <div class="l">BULL Signal Share</div>
+                    <div class="v">{bull_pct:.0f}%</div>
+                </div>
+            </div>
+        </div>"""
+
     # Load last week prediction (6/30 W27 prediction)
     last_week_pred = load_json(OUTPUT_DIR / "archive" / "2026-06-30" / "weekly_prediction.json")
     
@@ -1072,6 +1116,7 @@ def main():
         <p class="sub">13 市场 · 3 因子模型 · EPU 制度切换 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
     </div>
 
+    {epu_alert_html}
     {last_week_section}
     {monthly_section}
     {current_section}

@@ -63,8 +63,8 @@ FLAT_MARKET_THRESHOLD = 0.005   # |10d return| < 0.5% → force NEUT
 # Low-conviction thresholds (P1: 2026W30)
 # When predicted return magnitude and all factor z-scores are
 # below these thresholds, BULL/BEAR → NEUT (signal quality gating).
-LOW_CONVICTION_RET_THRESHOLD = 0.003   # |pred_ret| < 0.3% → low conviction
-LOW_CONVICTION_Z_THRESHOLD = 1.0       # all |z-score| < 1.0 → no clear signal
+LOW_CONVICTION_RET_THRESHOLD = 0.15    # |pred_ret| < 15% annual (2026W31: percentage-scale correction) → low conviction
+LOW_CONVICTION_Z_THRESHOLD = 1.5        # all |z-score| < 1.5 (2026W31: relaxed) → no clear signal
 
 # Regime (regime) detection via Mahalanobis distance (P3: 2026W30)
 # Measures how far current 3-factor vector is from training distribution.
@@ -153,6 +153,7 @@ class HighConfidencePredictor:
         self._vix_trend_5d: Optional[float] = None   # 5-day change (fraction)
         self._vix_trend_20d: Optional[float] = None  # 20-day change (fraction)
         self._vix_active: bool = False
+        self._vix_median: float = 20.0
         # Sentiment / flow factor (P2: 2026W30)
         self._pcr_history: Optional[pd.Series] = None   # put/call ratio daily series
         self._spread_history: Optional[pd.Series] = None  # 10Y-2Y spread daily series
@@ -203,6 +204,7 @@ class HighConfidencePredictor:
         if len(clean) >= 20:
             self._vix_trend_20d = float(clean[-1] / clean[-21] - 1) if clean[-21] > 0 else 0
         self._vix_active = True
+        self._vix_median = float(np.median(clean))
         logger.info(
             f"VIX fitted: now={self._vix_now:.1f} P80={self._vix_p80:.1f} "
             f"P20={self._vix_p20:.1f} 5d={self._vix_trend_5d:+.1%} 20d={self._vix_trend_20d:+.1%}"
@@ -379,12 +381,14 @@ class HighConfidencePredictor:
                     regime_key = "normal_vix"
                     source = "vix_low"
             else:
-                # VIX in middle zone — trust EPU
+                # VIX in middle zone — trust EPU, but detect EPU/VIX disconnect
                 regime_key = base
                 if is_high == vix_says_high:
                     source = "epu+matched"
                 else:
                     source = "epu"
+                if is_high and hasattr(self, "_vix_median") and self._vix_now < self._vix_median:
+                    conflict = True
         else:
             regime_key = base
             source = "epu"
@@ -821,10 +825,20 @@ class HighConfidencePredictor:
                     f"sentiment={sd} vs model={'BULL' if model_dir > 0 else 'BEAR'}"
                 )
 
+        # ── P2: Extreme EPU regime downgrade (2026W31) ──
+        extreme_epu_neut = False
+        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0:
+            is_extreme_epu = self._is_high_epu(epu_value * 0.85, epu_label)
+            if is_extreme_epu and abs(pred) < 0.15:
+                extreme_epu_neut = True
+                signal = 0
+
         # ── P1: Low-conviction check (overrides weak BULL/BEAR → NEUT) ──
         low_confidence = False
-        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0:
+        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0 and not extreme_epu_neut:
             signal, low_confidence = self._check_low_conviction(pred, factors, signal, market)
+        elif extreme_epu_neut:
+            low_confidence = True
 
         # ── Build detail string ──────────────────────────────
         detail_parts = []
@@ -832,6 +846,8 @@ class HighConfidencePredictor:
             detail_parts.append(over_reason)
         if conflict_override:
             detail_parts.append(f"⚠ VIX-EPU冲突→NEUT (VIX={self._vix_now:.1f}, EPU={epu_value:.0f})")
+        if extreme_epu_neut:
+            detail_parts.append("P99 EPU极端→NEUT (|pred|<15%)")
         if flat_market:
             detail_parts.append(f"平盘→NEUT (|10d ret| < {FLAT_MARKET_THRESHOLD:.1%})")
         if sentiment_overridden:
