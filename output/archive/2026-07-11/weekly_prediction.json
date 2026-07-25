@@ -1,26 +1,26 @@
 {
-  "generated": "2026-07-11T10:11:13+08:00",
-  "generated_display": "2026-07-11 10:11 CST",
+  "generated": "2026-07-11T12:42:01+08:00",
+  "generated_display": "2026-07-11 12:42 CST",
   "prediction_period": "2026年第29周 (7/13-7/19)",
   "epu": {
     "value": 350.1,
-    "regime": "NORMAL",
+    "regime": "HIGH_EPU",
     "percentile": 99.1,
     "china_epu": 376.4
   },
   "vix": {
-    "current": 15.029999732971191,
-    "p80": 24.200000762939453,
-    "p20": 13.329999923706055,
-    "trend_5d": -0.0693,
-    "trend_20d": -0.3236
+    "current": null,
+    "p80": null,
+    "p20": null,
+    "trend_5d": null,
+    "trend_20d": null
   },
   "tier1_count": 10,
   "tier2_count": 3,
   "signal_distribution": {
-    "BULL": 11,
+    "BULL": 8,
     "BEAR": 1,
-    "NEUT": 1
+    "NEUT": 4
   },
   "actual_accuracy": {
     "hit_rate": 0.2727,
@@ -121,26 +121,30 @@
       "tm_z": 1.12,
       "mr_z": -0.8,
       "vr_z": -0.5,
-      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
       "market": "IN",
       "name_cn": "印度 NIFTY",
-      "signal": "BULL",
+      "signal": "NEUT",
       "pred_ret": 0.2955,
       "accuracy": 0.8421,
       "tier": 1,
       "tm_z": -1.27,
       "mr_z": 1.07,
       "vr_z": -0.89,
-      "detail": "EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | 高波动 | VIX=15.0↓",
+      "detail": "平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": true,
+      "vix_epu_conflict": false,
       "group": "EM"
     },
     {
@@ -153,10 +157,12 @@
       "tm_z": 0.4,
       "mr_z": -0.35,
       "vr_z": 0.78,
-      "detail": "EPU高→高政策不确定性 | 低波动 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性 | 低波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
@@ -169,10 +175,12 @@
       "tm_z": 3.57,
       "mr_z": -3.78,
       "vr_z": -1.25,
-      "detail": "🔥 EXTREME OVERHEAT (tm=3.6σ > +3.5σ) → BEAR | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=15.0↓",
+      "detail": "🔥 EXTREME OVERHEAT (tm=3.6σ > +3.5σ) → BEAR | EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": true,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "EM"
     },
     {
@@ -185,10 +193,12 @@
       "tm_z": 0.03,
       "mr_z": -0.07,
       "vr_z": -0.42,
-      "detail": "EPU高→高政策不确定性 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
@@ -201,10 +211,12 @@
       "tm_z": -0.89,
       "mr_z": 1.07,
       "vr_z": -0.39,
-      "detail": "中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖 | VIX=15.0↓",
+      "detail": "中EPU高→高政策不确定性 | 趋势极弱 | 深度超卖",
       "regime": "high_epu_china_china",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "EM"
     },
     {
@@ -217,10 +229,12 @@
       "tm_z": -0.18,
       "mr_z": 0.09,
       "vr_z": 0.31,
-      "detail": "EPU高→高政策不确定性 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
@@ -233,10 +247,12 @@
       "tm_z": 0.75,
       "mr_z": -0.51,
       "vr_z": -0.71,
-      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
@@ -249,26 +265,30 @@
       "tm_z": 2.49,
       "mr_z": -2.41,
       "vr_z": -0.88,
-      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
       "market": "AU",
       "name_cn": "澳洲 ASX",
-      "signal": "BULL",
+      "signal": "NEUT",
       "pred_ret": 0.049,
       "accuracy": 0.7273,
       "tier": 1,
       "tm_z": -0.38,
       "mr_z": 0.33,
       "vr_z": -0.55,
-      "detail": "EPU高→高政策不确定性 | 高波动 | VIX=15.0↓",
+      "detail": "平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": true,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
@@ -281,10 +301,12 @@
       "tm_z": 1.36,
       "mr_z": -1.29,
       "vr_z": -0.81,
-      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性 | 趋势偏强 | 明显超买 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "DM"
     },
     {
@@ -297,26 +319,30 @@
       "tm_z": 0.19,
       "mr_z": 0.03,
       "vr_z": -0.78,
-      "detail": "EPU高→高政策不确定性 | 高波动 | VIX=15.0↓",
+      "detail": "EPU高→高政策不确定性 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": false,
+      "vix_epu_conflict": false,
       "group": "EM"
     },
     {
       "market": "BR",
       "name_cn": "巴西 Bovespa",
-      "signal": "BULL",
+      "signal": "NEUT",
       "pred_ret": 0.2031,
       "accuracy": 0.6364,
       "tier": 2,
       "tm_z": 0.08,
       "mr_z": 0.25,
       "vr_z": -0.78,
-      "detail": "EPU高→高政策不确定性 | 高波动 | VIX=15.0↓",
+      "detail": "平盘→NEUT (|10d ret| < 0.5%) | EPU高→高政策不确定性 | 高波动",
       "regime": "high_epu",
       "last_date": "",
       "overheat": false,
+      "flat_market": true,
+      "vix_epu_conflict": false,
       "group": "EM"
     }
   ]
