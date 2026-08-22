@@ -61,14 +61,16 @@ MARKET_TICKERS = {
 }
 
 # ── Market-specific parameters ─────────────────────────────
-# HK: China EPU (verified +10pp improvement vs US EPU, now 77%)
+# HK: China EPU (verified +10pp improvement vs US EPU, now 77%).
+#     AR(1) 0.60 → 0.75 (2026W32): preserve HSI's strong trend signal
+#     (July 2026: +12%/mo rally that the 0.60 decay dampened).
 # CN: REVERTED to US EPU — China EPU caused -10pp regression (65→55%).
 #     A-shares dominated by retail flow/policy directives, not EPU.
 #     Higher signal threshold + lower AR to reduce false signals.
 # IN: only 19y data, 0 normal EPU years → single-model fallback.
 # BR: high volatility, uses faster AR(1) decay.
 MARKET_PARAMS = {
-    "HK": {"ar_coeff": 0.60, "signal_threshold": 0.05, "epu_label": "china"},
+    "HK": {"ar_coeff": 0.75, "signal_threshold": 0.05, "epu_label": "china"},
     "CN": {"ar_coeff": 0.55, "signal_threshold": 0.06, "epu_label": "us"},
     "BR": {"ar_coeff": 0.65, "signal_threshold": 0.05, "epu_label": "us"},
     "IN": {"ar_coeff": 0.65, "signal_threshold": 0.03, "epu_label": "us"},
@@ -133,6 +135,36 @@ def load_prices(today: date = None):
         except Exception as e:
             logger.warning(f"  {name} ({ticker}): {e}")
     return prices
+
+
+def load_ohlc(today: date = None):
+    """Load OHLCV frames for all markets (2026W34 intraday factors).
+
+    The EquitiesFetcher parquet cache is keyed on (start, end), so this
+    second pass re-reads the same cached file — no extra network cost.
+    Returns market → DataFrame with uppercase OHLC columns.
+    """
+    if today is None:
+        today = date.today()
+    end_str = today.strftime("%Y-%m-%d")
+
+    ohlc = {}
+    for name, (ticker, _) in MARKET_TICKERS.items():
+        try:
+            f = EquitiesFetcher(ticker=ticker)
+            df = f.fetch(start_date="1985-01-01", end_date=end_str)
+            if df is not None and not df.empty:
+                idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(
+                    df["date"] if "date" in df.columns else df.index
+                )
+                cols = {c: c for c in ("Open", "High", "Low", "Close") if c in df.columns}
+                if len(cols) >= 3:
+                    ohlc[name] = df[list(cols)].copy()
+                    ohlc[name].index = idx
+                    ohlc[name] = ohlc[name].sort_index()
+        except Exception as e:
+            logger.warning(f"  {name} ({ticker}) OHLC: {e}")
+    return ohlc
 
 
 def load_epu():
@@ -310,6 +342,7 @@ def compute_actual_accuracy(predictions, prior_json_path: Path, today: date):
 def run_predictions(vix_series=None):
     """Returns (predictions_list, epu_values, is_high_epu, vix_info, epu_percentile, predictor)."""
     prices = load_prices()
+    ohlc = load_ohlc()  # 2026W34 intraday micro-factors
     epu_a = load_epu()
     china_epu_a = load_china_epu()
     raw_epu_monthly = load_raw_epu_monthly()
@@ -392,7 +425,8 @@ def run_predictions(vix_series=None):
         try:
             epu_label = MARKET_PARAMS.get(market, {}).get("epu_label", "us")
             epu_data = china_epu_a if epu_label == "china" else epu_a
-            result = predictor.fit_market(market, px, epu_data, epu_label=epu_label)
+            result = predictor.fit_market(market, px, epu_data, epu_label=epu_label,
+                                          ohlc=ohlc.get(market) if market in ohlc else None)
             if result:
                 ar = MARKET_PARAMS.get(market, {}).get("ar_coeff", 0.75)
                 group = "EM" if market in EMERGING_MARKETS else "DM"
@@ -408,6 +442,7 @@ def run_predictions(vix_series=None):
         prices, epu_now,
         epu_values={"us": epu_now, "china": china_epu_now},
         cycle_phase=cycle_phase,
+        ohlc=ohlc,
     )
 
     # Compute rolling 5-year backtest for each market
@@ -428,11 +463,13 @@ def run_predictions(vix_series=None):
     for p in predictions:
         p.sentiment_factor = sentiment_dir
 
-    # Use VIX regime if active, otherwise use EPU regime
-    if predictor._vix_active and predictor._vix_now is not None:
-        is_high = predictor._vix_now > predictor._vix_p80
-    else:
-        is_high = predictor._is_high_epu(epu_now, "us")
+    # Top-level regime label reflects the EPU regime that drives model
+    # selection (2026W34 fix).  The previous VIX-level gate (VIX > P80)
+    # mislabeled EPU-P99 weeks as "NORMAL" whenever VIX stayed calm — e.g.
+    # W34 showed regime "NORMAL" with EPU 350.1 (P99.1) because VIX 15.84
+    # was below P80 24.2.  VIX state is surfaced separately in the JSON
+    # "vix" field, and per-market VIX risk-off is handled inside predict().
+    is_high = predictor._is_high_epu(epu_now, "us")
 
     return predictions, {"us": epu_now, "china": china_epu_now}, is_high, vix_info, epu_percentile, predictor, {
         "cycle_phase": cycle_phase,
@@ -480,6 +517,16 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
             "tm_z": round(float(p.factors.get("tm_z", 0)), 2),
             "mr_z": round(float(p.factors.get("mr_z", 0)), 2),
             "vr_z": round(float(p.factors.get("vr_z", 0)), 2),
+            # Micro-period factors (2026W33): 5d momentum / intra-week vol / weekend gap
+            "mm_z": round(float(p.factors.get("mm_z", 0)), 2),
+            "iv_z": round(float(p.factors.get("iv_z", 0)), 2),
+            "gs_z": round(float(p.factors.get("gs_z", 0)), 2),
+            # Intraday micro-factors (2026W34): close momentum / close location
+            "cm_z": round(float(p.factors.get("cm_z", 0)), 2),
+            "cl_z": round(float(p.factors.get("cl_z", 0)), 2),
+            "micro_score": round(float(p.factors.get("micro_score", 0)), 3),
+            "micro_effect": getattr(p, 'micro_effect', None),
+            "micro_evidence": getattr(p, 'micro_evidence', None),
             "detail": getattr(p, 'detail', ''),
             "regime": getattr(p, 'regime', 'normal'),
             "last_date": last_date,
@@ -709,6 +756,9 @@ def build_prediction_html(data, week_info):
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m["tm_z"]:+.2f}σ</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m["mr_z"]:+.2f}σ</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m.get("vr_z",0):+.2f}σ</td>'
+            f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m.get("mm_z",0):+.2f}σ</td>'
+            f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m.get("iv_z",0):+.2f}σ</td>'
+            f'<td style="padding:6px 8px;text-align:right;font-size:12px;color:#888">{m.get("gs_z",0):+.2f}σ</td>'
             f'<td style="padding:6px 8px;text-align:right;font-size:12px">{rd_html}</td>'
             f'<td style="padding:6px 8px;text-align:center">{sent_cell}</td>'
             f'<td style="padding:6px 8px;text-align:left;font-size:10px;color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{m.get("detail","")}">{m.get("detail","")}</td>'
@@ -729,7 +779,7 @@ def build_prediction_html(data, week_info):
             <thead><tr>
                 <th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th>
                 <th style="text-align:right">准确率</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th>
-                <th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
+                <th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">微动量(σ)</th><th style="text-align:right">周内波动(σ)</th><th style="text-align:right">跳空(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
             </tr></thead>
             <tbody>{hk_rows}</tbody>
         </table>
@@ -809,12 +859,12 @@ def build_prediction_html(data, week_info):
     <table class="predict-table">
         <thead><tr>
             <th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th>
-            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
+            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">微动量(σ)</th><th style="text-align:right">周内波动(σ)</th><th style="text-align:right">跳空(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th>
         </tr></thead>
         <tbody>{tier1_rows}</tbody>
     </table>
 
-    {'<h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70%)</h3><table class="predict-table"><thead><tr><th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th><th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th></tr></thead><tbody>' + tier2_rows + '</tbody></table>' if tier2_rows else ''}
+    {'<h3 style="font-size:15px;color:#ff9800;margin-top:32px;margin-bottom:16px;">★★ Tier 2 — 参考级别 (55-70%)</h3><table class="predict-table"><thead><tr><th>市场</th><th>信号</th><th style="text-align:right">预测年收益</th><th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">趋势(σ)</th><th style="text-align:right">回归(σ)</th><th style="text-align:right">波动(σ)</th><th style="text-align:right">微动量(σ)</th><th style="text-align:right">周内波动(σ)</th><th style="text-align:right">跳空(σ)</th><th style="text-align:right">制度σ</th><th style="text-align:center">情绪</th><th>详情</th></tr></thead><tbody>' + tier2_rows + '</tbody></table>' if tier2_rows else ''}
 
     <div class="insight-box" style="margin-top:32px">
         <p>💡 <strong>模型说明：</strong>3-factor (趋势+回归+波动率) 线性模型 + 分市场制度切换 (EM P65 / DM P75)。
@@ -1049,9 +1099,11 @@ def main():
         conflict_count = sum(1 for m in data["markets"] if m.get("vix_epu_conflict"))
         overheat_count = sum(1 for m in data["markets"] if m.get("overheat"))
         low_conf_count = sum(1 for m in data["markets"] if m.get("low_confidence"))
+        micro_effect_count = sum(1 for m in data["markets"] if m.get("micro_effect"))
+        micro_evidence_count = sum(1 for m in data["markets"] if m.get("micro_evidence"))
         regime_shifted = data.get("regime_shifted_count", 0)
         regime_warned = data.get("regime_warned_count", 0)
-        if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted or regime_warned:
+        if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted or regime_warned or micro_effect_count or micro_evidence_count:
             parts = []
             if overheat_count:
                 parts.append(f"过热:{overheat_count}")
@@ -1061,6 +1113,10 @@ def main():
                 parts.append(f"VIX-EPU冲突:{conflict_count}")
             if low_conf_count:
                 parts.append(f"低信念→NEUT:{low_conf_count}")
+            if micro_effect_count:
+                parts.append(f"微周期调节:{micro_effect_count}")
+            if micro_evidence_count:
+                parts.append(f"微证据:{micro_evidence_count}")
             if regime_shifted:
                 parts.append(f"制度偏离强制NEUT:{regime_shifted}")
             if regime_warned:
@@ -1161,9 +1217,10 @@ def main():
     conflict_count = sum(1 for m in data["markets"] if m.get("vix_epu_conflict"))
     overheat_count = sum(1 for m in data["markets"] if m.get("overheat"))
     low_conf_count = sum(1 for m in data["markets"] if m.get("low_confidence"))
+    micro_evidence_count = sum(1 for m in data["markets"] if m.get("micro_evidence"))
     regime_shifted_sum = data.get("regime_shifted_count", 0)
     regime_warned_sum = data.get("regime_warned_count", 0)
-    if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted_sum or regime_warned_sum:
+    if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted_sum or regime_warned_sum or micro_evidence_count:
         parts = []
         if overheat_count:
             parts.append(f"过热:{overheat_count}")
@@ -1173,6 +1230,8 @@ def main():
             parts.append(f"VIX-EPU冲突:{conflict_count}")
         if low_conf_count:
             parts.append(f"低信念→NEUT:{low_conf_count}")
+        if micro_evidence_count:
+            parts.append(f"微证据:{micro_evidence_count}")
         if regime_shifted_sum:
             parts.append(f"制度偏离强制NEUT:{regime_shifted_sum}")
         if regime_warned_sum:

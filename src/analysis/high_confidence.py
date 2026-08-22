@@ -21,6 +21,65 @@ Output tiers:
   - Removed blind "EPU高→趋势延续模式" default.  Overheat rules take priority
     to prevent bubble-chasing predictions.
 
+2026W32 correction (Aug 2026) — de-blanketing the reactive downgrade gates.
+Out-of-sample hit rate fell 50% (W28) → 27% (W29) → 22% (W30) → 22% (W31)
+as W28-W31 each added a blanket "downgrade to NEUT" rule.  W31 ended with
+13/13 markets NEUT (zero actionable signal) while 9/13 markets rose.
+Evidence from W31: the raw 3-factor model predicted +7%..+28% annual for
+11/13 markets (directionally correct ~65%), but the stacked gates zeroed
+every signal.  Fixes (each gate now requires genuine evidence, not a veto):
+  - VIX-EPU conflict: now a confidence discount (×0.85), NOT a NEUT veto.
+    A calm VIX during monthly-EPU P99 means the lagging EPU read overstates
+    risk — that is information, not a reason to silence the model.
+  - Removed the unconditional "extreme EPU |pred|<15% → NEUT" gate (it was
+    a redundant double-kill on top of the low-conviction gate).
+  - Low-conviction return threshold 15% → 8% annual: 8-15% expected annual
+    returns ARE meaningful signals; the 15% bar sat above the median pred.
+  - Cycle tilt (stagflation/recession kills BULL) now applies only to
+    weak-trend signals (max |z| < 1.5).  Strong-momentum BULLs survive.
+  - Regime-distance force-NEUT threshold 2.5σ → 3.5σ (warn stays at 1.5σ):
+    the 2.5σ bar forced NEUT on exactly the strongest-trend markets.
+  - Current factor window: trailing 252-day mean instead of partial
+    calendar-year mean, so intra-year trend reversals (e.g. HSI's +12%
+    July rally after a weak H1) are visible to the model.
+
+2026W33 — micro-period factors (3-7 day horizon):
+  The trend model (20/60/120-day) was blind to weekly turns during W30-W31
+  (22-27% hit rate in P99 EPU).  Three new factors — micro_momentum (5d),
+  intraweek_volatility (5d vs 60d), and gap_signal (weekend gaps) — are
+  computed as a confidence MODULATOR, not added to the regression model:
+  when their combined score agrees with the model's direction confidence
+  gets ×1.06, when it disagrees confidence is discounted ×0.90.  No signal
+  flips, no NEUT forcing — a strong trend survives a weak micro cross-current.
+
+2026W34 — intraday micro-factors with directional power:
+  close_momentum (daily close-to-open return, 5d trailing mean) and
+  close_location (close position in the day's high-low range, 5d trailing
+  mean) are the first micro-factors with VERIFIED directional IC
+  (full-period +0.151 / +0.102; 2024+ +0.134 / +0.120; hit rates 56.5% /
+  58.4%) and near-zero correlation with the momentum family (≈0.08-0.13
+  vs micro_momentum).  They therefore may now influence DIRECTION, not
+  just confidence — but only on hard evidence and only in weak states:
+  both z-scores must agree and clear |z| ≥ 1.0 (MICRO_EVIDENCE_Z_THRESHOLD).
+  A NEUT signal may be lifted to a weak BULL/BEAR (MICRO_EVIDENCE_LIFT_RET
+  = 6% expected annual); a weak BULL/BEAR (all 3-factor |z| < 1.5 and
+  |pred| < MICRO_EVIDENCE_STRONG_RET = 12%) is pulled to NEUT when both
+  oppose.  Strong 3-factor signals (any |z| ≥ 1.5 or |pred| ≥ 12%) are
+  never touched; BULL↔BEAR flips are structurally impossible.  The W33
+  micro_score blend (mm 0.50 / gs 0.30 / iv 0.20) is unchanged — cm/cl are
+  excluded from the confidence modulator and act on direction only through
+  this gate.
+
+2026W34 (W34 weekly correction) — risk-off VIX spike:
+  W34 hit 0/6 BULL (0.0 actual accuracy): all six BULL signals reversed
+  (US -0.79%, DE -1.17%, IT -1.99%, CA -0.11%, IN -1.45%, AU -2.26%) while
+  VIX spiked +11.2% in 5 days (15.84) — but stayed below P80 (24.2), so the
+  "rising VIX" regime gate never fired.  Fix: a fast VIX spike (> +10% / 5d)
+  is now detected at ANY level (VIX_RISK_OFF_5D_THRESHOLD) and discounts
+  surviving BULL confidence ×0.70 (VIX_RISK_OFF_BULL_DISCOUNT) — directional,
+  not a NEUT veto (a hard veto would re-import W31's 13/13 over-suppression,
+  since VIX 5d > +5% occurs on ~27% of calm days).
+
 Previous improvements retained:
   - Per-market EPU assignment: HK uses China EPU (CHNMAINLANDEPU)
   - Market-specific AR(1) decay and signal thresholds
@@ -37,7 +96,16 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from src.analysis.factors import trend_momentum, mean_reversion, volatility_regime
+from src.analysis.factors import (
+    trend_momentum,
+    mean_reversion,
+    volatility_regime,
+    micro_momentum,
+    intraweek_volatility,
+    gap_signal,
+    close_momentum,
+    close_location,
+)
 from sklearn.linear_model import LinearRegression
 
 
@@ -60,17 +128,74 @@ OVERHEAT_BEAR_THRESHOLD = 3.5   # factor > +3.5σ → force BEAR
 # Flat market threshold (P0: 2026W29)
 FLAT_MARKET_THRESHOLD = 0.005   # |10d return| < 0.5% → force NEUT
 
-# Low-conviction thresholds (P1: 2026W30)
+# Low-conviction thresholds (P1: 2026W30, tuned 2026W32)
 # When predicted return magnitude and all factor z-scores are
 # below these thresholds, BULL/BEAR → NEUT (signal quality gating).
-LOW_CONVICTION_RET_THRESHOLD = 0.15    # |pred_ret| < 15% annual (2026W31: percentage-scale correction) → low conviction
-LOW_CONVICTION_Z_THRESHOLD = 1.5        # all |z-score| < 1.5 (2026W31: relaxed) → no clear signal
+# 2026W32: return bar 15% → 8% annual.  The 15% bar sat above the median
+# predicted return (median ≈ 12%), so it zeroed most valid BULL signals
+# (W31 ended 13/13 NEUT).  8-15% annual expected returns are meaningful.
+LOW_CONVICTION_RET_THRESHOLD = 0.08    # |pred_ret| < 8% annual → low conviction
+LOW_CONVICTION_Z_THRESHOLD = 1.5        # all |z-score| < 1.5 → no clear signal
 
 # Regime (regime) detection via Mahalanobis distance (P3: 2026W30)
 # Measures how far current 3-factor vector is from training distribution.
 # Larger distance → more unfamiliar regime → lower confidence / force NEUT.
 REGIME_DISTANCE_WARN = 1.5    # D > 1.5 → lower confidence, mark "unfamiliar regime"
-REGIME_DISTANCE_NEUT = 2.5    # D > 2.5 → force NEUT, mark "extreme regime shift"
+# 2026W32: force-NEUT bar 2.5σ → 3.5σ.  At 2.5σ the rule forced NEUT on the
+# strongest-trend markets (KR D=3.9, JP D=3.2 both rose the following week).
+# D in (2.5, 3.5] now only discounts confidence.
+REGIME_DISTANCE_NEUT = 3.5    # D > 3.5 → force NEUT, mark "extreme regime shift"
+
+# Current-factor window (2026W32): use trailing 252 trading days instead of
+# the current partial calendar year for the "now" factor values.  Calendar-YTD
+# means lag intra-year reversals (HSI: daily tm +0.32 vs YTD mean -0.06 → the
+# July +12% rally was invisible to the model).  Trailing-1y keeps the scale
+# consistent with the annual training means while reacting to reversals.
+CURRENT_FACTOR_WINDOW_DAYS = 252
+
+# Micro-period factors (2026W33): 3-7 day horizon signals to catch short-term
+# turns the 20/60/120-day trend model misses.  W30-W31 hit 22-27% in P99 EPU
+# because the model kept predicting trend continuation while markets turned;
+# these factors are the weekly-timing layer on top of the annual model.
+#
+# They are used ONLY as a confidence modulator, never a signal veto: when the
+# micro score agrees with the model's direction confidence gets a small boost,
+# when it disagrees confidence is discounted.  A strong trend still survives a
+# weak micro cross-current (no NEUT forcing — W32's lesson).
+MICRO_FACTOR_WINDOW_DAYS = 60      # trailing mean window for micro factors
+MICRO_ALIGN_THRESHOLD = 0.04       # |micro_score| needed to trigger modulation
+MICRO_ALIGN_BOOST = 0.06           # aligned → confidence ×1.06
+MICRO_CONFLICT_DISCOUNT = 0.10     # conflicting → confidence ×0.90
+
+# Intraday micro-factors with directional power (2026W34).
+# close_momentum / close_location are the first micro-factors with verified
+# directional IC (full-period +0.151 / +0.102, 2024+ +0.134 / +0.120) and
+# near-zero correlation with the momentum family, so they may influence
+# DIRECTION — but only on hard evidence and only in weak states:
+#   - both z-scores must agree and clear MICRO_EVIDENCE_Z_THRESHOLD;
+#   - NEUT may be lifted to a weak BULL/BEAR (MICRO_EVIDENCE_LIFT_RET annual);
+#   - a weak BULL/BEAR (all 3-factor |z| < 1.5 and |pred| <
+#     MICRO_EVIDENCE_STRONG_RET) is pulled to NEUT when both oppose;
+#   - strong 3-factor signals (any |z| >= 1.5 or |pred| >= STRONG_RET) are
+#     never touched.
+# BULL↔BEAR flips remain structurally impossible.
+MICRO_EVIDENCE_Z_THRESHOLD = 1.0   # each |cm_z|, |cl_z| must clear this
+MICRO_EVIDENCE_LIFT_RET = 0.06     # NEUT → weak directional expected annual
+MICRO_EVIDENCE_STRONG_RET = 0.12   # |pred| >= this → strong, never touched
+
+# Risk-off VIX spike detection (2026W34).
+# A fast VIX spike is a directional risk-off signal at ANY level.  The old
+# logic only flagged "rising VIX" when VIX was already > P80, so a +11%
+# 5-day spike from a calm base (VIX 15.8 < P80 24.2) was invisible — and
+# W34's 6 BULL calls all reversed (0/6).  Calibrated against VIX history
+# (through 2026-05-22): 5-day change P80 = +9.3%, P85 = +12.1%, P90 = +16.8%;
+# a +10% 5-day spike occurs on ~15% of sub-P80 ("calm") days, so it is a
+# real but not rare condition.  We discount surviving BULL confidence ×0.70
+# (directional, NOT a NEUT veto): a hard veto at +5% would trigger on ~27%
+# of calm days and re-import W31's 13/13 over-suppression.
+VIX_RISK_OFF_5D_THRESHOLD = 0.10   # 5-day VIX change > +10% → risk-off
+VIX_RISK_OFF_BULL_DISCOUNT = 0.70  # BULL confidence ×0.70 during risk-off
+
 
 
 def _market_group(market: str) -> str:
@@ -112,6 +237,8 @@ class MarketPrediction:
     regime_distance: Optional[float] = None
     regime_shift: bool = False
     regime_unfamiliar: bool = False
+    micro_effect: Optional[str] = None   # 'align' | 'conflict' | None (2026W33)
+    micro_evidence: Optional[str] = None # 'lift' | 'downgrade' | None (2026W34)
 
 
 class HighConfidencePredictor:
@@ -338,15 +465,18 @@ class HighConfidencePredictor:
             return False
         return epu_value > self._epu_threshold[label]
 
-    def _get_regime(self, market: str, epu_value: float, epu_label: str) -> Tuple[str, str, bool]:
+    def _get_regime(self, market: str, epu_value: float, epu_label: str) -> Tuple[str, str, bool, bool]:
         """Determine regime for a market, considering EPU + VIX.
 
-        Returns (regime_key, source, conflict) where:
+        Returns (regime_key, source, conflict, vix_risk_off) where:
           regime_key: 'high_epu', 'normal', 'high_epu_vix', etc.
           source: 'epu', 'vix', 'vix_rising', 'vix_low', 'epu+matched'
           conflict: True when VIX and EPU disagree on regime direction
                     (VIX > P80 but EPU normal, or VIX < P20 but EPU high).
                     When True, the caller should downgrade to NEUT for safety.
+          vix_risk_off: True when VIX is spiking fast (> +10% / 5d) at ANY
+                    level — a directional risk-off signal that discounts
+                    surviving BULL confidence (2026W34), not a NEUT veto.
         """
         is_high = self._is_high_epu(epu_value, epu_label)
         base = f"high_epu_{epu_label}" if (is_high and epu_label != "us") else \
@@ -354,9 +484,18 @@ class HighConfidencePredictor:
                f"normal_{epu_label}" if epu_label != "us" else "normal"
 
         conflict = False
+        vix_risk_off = False
 
         # VIX override if available: VIX > P80 = high uncertainty
         if self._vix_active and self._vix_now is not None:
+            # 2026W34: fast-rising VIX is a risk-off signal at ANY level.
+            # Previously rising VIX was only flagged once VIX had already
+            # crossed P80, so a +11% 5-day spike from a calm base was ignored.
+            # Hoisted above the level gate.
+            if (self._vix_trend_5d is not None
+                    and self._vix_trend_5d > VIX_RISK_OFF_5D_THRESHOLD):
+                vix_risk_off = True
+
             vix_says_high = self._vix_now > self._vix_p80
             vix_says_low = self._vix_now < self._vix_p20
 
@@ -383,7 +522,11 @@ class HighConfidencePredictor:
             else:
                 # VIX in middle zone — trust EPU, but detect EPU/VIX disconnect
                 regime_key = base
-                if is_high == vix_says_high:
+                if vix_risk_off:
+                    # Fast spike, calm level: keep the EPU model but trace the
+                    # risk-off source (model selection unchanged).
+                    source = "vix_rising"
+                elif is_high == vix_says_high:
                     source = "epu+matched"
                 else:
                     source = "epu"
@@ -393,7 +536,7 @@ class HighConfidencePredictor:
             regime_key = base
             source = "epu"
 
-        return regime_key, source, conflict
+        return regime_key, source, conflict, vix_risk_off
 
     # ── Model fitting ───────────────────────────────────────────
     def fit_market(
@@ -402,6 +545,7 @@ class HighConfidencePredictor:
         prices: pd.Series,
         epu_annual: pd.Series,
         epu_label: str = None,
+        ohlc: Optional[pd.DataFrame] = None,
     ) -> Optional[Dict]:
         """Fit per-regime 3-factor model (tm, mr, vr) for a single market.
 
@@ -413,6 +557,11 @@ class HighConfidencePredictor:
             epu_annual: Annual mean EPU values (US or China).
             epu_label:  Which EPU to use for regime ('us' or 'china').
                         If None, auto-assigned from _market_epu_label or default 'us'.
+            ohlc:       Optional daily OHLC frame used to fit the 2026W34
+                        intraday micro-factor distributions (close_momentum /
+                        close_location).  When omitted these stay neutral
+                        (mean 0, std 1) so z-scores read 0 — legacy callers
+                        that pass close prices only are unaffected.
 
         Returns dict with model parameters, or None if market fails criteria.
         """
@@ -442,6 +591,17 @@ class HighConfidencePredictor:
         tm = trend_momentum(prices).resample("YE").mean().reindex(annual_r.index)
         mr = mean_reversion(prices).resample("YE").mean().reindex(annual_r.index)
         vr = volatility_regime(prices).resample("YE").mean().reindex(annual_r.index)
+        # Micro-period factors (2026W33): annual means only — they modulate
+        # confidence, so they must NOT enter the regression training set or
+        # the regime-distance distribution (keeps the 3-factor model intact).
+        mm = micro_momentum(prices).resample("YE").mean().reindex(annual_r.index)
+        iv = intraweek_volatility(prices).resample("YE").mean().reindex(annual_r.index)
+        gs = gap_signal(prices).resample("YE").mean().reindex(annual_r.index)
+        # Intraday micro-factors (2026W34): annual means from the OHLC frame.
+        # Same convention as mm/iv/gs — distribution for z-scores only, never
+        # entering the regression model.
+        cm = close_momentum(ohlc).resample("YE").mean().reindex(annual_r.index) if ohlc is not None else pd.Series(0.0, index=annual_r.index)
+        cl = close_location(ohlc).resample("YE").mean().reindex(annual_r.index) if ohlc is not None else pd.Series(0.0, index=annual_r.index)
         fwd = annual_r.shift(-1).dropna()
 
         valid = tm.dropna().index.intersection(mr.dropna().index).intersection(
@@ -452,6 +612,11 @@ class HighConfidencePredictor:
         tm_v = tm.loc[valid]
         mr_v = mr.loc[valid]
         vr_v = vr.loc[valid]
+        mm_v = mm.loc[valid]
+        iv_v = iv.loc[valid]
+        gs_v = gs.loc[valid]
+        cm_v = cm.loc[valid]
+        cl_v = cl.loc[valid]
         fwd_v = fwd.loc[valid]
         epu_v = epu_annual.loc[valid]
 
@@ -530,6 +695,18 @@ class HighConfidencePredictor:
             "tm_std": float(tm_v.std()),
             "mr_std": float(mr_v.std()),
             "vr_std": float(vr_v.std()),
+            # Micro-factor training distribution (2026W33) — for display
+            # z-scores only; never used in the regression model.
+            "mm_mean": float(mm_v.mean()) if mm_v.notna().any() else 0.0,
+            "mm_std": float(mm_v.std()) if mm_v.notna().sum() >= 2 else 1.0,
+            "iv_mean": float(iv_v.mean()) if iv_v.notna().any() else 0.0,
+            "iv_std": float(iv_v.std()) if iv_v.notna().sum() >= 2 else 1.0,
+            "gs_mean": float(gs_v.mean()) if gs_v.notna().any() else 0.0,
+            "gs_std": float(gs_v.std()) if gs_v.notna().sum() >= 2 else 1.0,
+            "cm_mean": float(cm_v.mean()) if cm_v.notna().any() else 0.0,
+            "cm_std": float(cm_v.std()) if cm_v.notna().sum() >= 2 else 1.0,
+            "cl_mean": float(cl_v.mean()) if cl_v.notna().any() else 0.0,
+            "cl_std": float(cl_v.std()) if cl_v.notna().sum() >= 2 else 1.0,
             "epu_threshold": epu_thresh,
             "group": _market_group(market),
             "group_pct": group_pct,
@@ -661,12 +838,16 @@ class HighConfidencePredictor:
         prices: pd.Series,
         epu_value: float,
         cycle_phase: str = "unknown",
+        ohlc: Optional[pd.DataFrame] = None,
     ) -> MarketPrediction:
         """Generate prediction for a single market.
 
         Uses the appropriate regime model based on current EPU,
         with market-specific AR(1) decay and signal thresholds.
         Applies overheat downgrade rules after model prediction.
+
+        ``ohlc`` is optional; when omitted the 2026W34 intraday factors
+        (cm/cl) stay neutral (z = 0) so behavior matches legacy callers.
         """
         if market not in self._models:
             return MarketPrediction(
@@ -677,7 +858,7 @@ class HighConfidencePredictor:
 
         cfg = self._models[market]
         epu_label = self._market_epu_label.get(market, "us")
-        regime_key, regime_source, vix_epu_conflict = self._get_regime(market, epu_value, epu_label)
+        regime_key, regime_source, vix_epu_conflict, vix_risk_off = self._get_regime(market, epu_value, epu_label)
 
         # Map vix-based regimes back to model regime keys
         model_regime = "high_epu" if "high_epu" in regime_key else "normal"
@@ -694,20 +875,64 @@ class HighConfidencePredictor:
         rm = cfg["regime_models"][model_regime]
         m = rm["model"]
 
-        # Current factor values
-        annual_r = prices.pct_change(fill_method=None).resample("YE").apply(
-            lambda x: np.prod(1 + x) - 1
-        ).dropna()
-        tm_all = trend_momentum(prices).resample("YE").mean().reindex(annual_r.index)
-        mr_all = mean_reversion(prices).resample("YE").mean().reindex(annual_r.index)
-        vr_all = volatility_regime(prices).resample("YE").mean().reindex(annual_r.index)
+        # Current factor values — trailing-1y window (2026W32).
+        # Calendar-YTD means lag intra-year reversals (HSI's July +12%
+        # rally was invisible in the H1-2026 annual mean), so the "now"
+        # factor state uses the trailing 252 trading days instead.
+        tm_daily = trend_momentum(prices)
+        mr_daily = mean_reversion(prices)
+        vr_daily = volatility_regime(prices)
 
-        tm_now = float(tm_all.iloc[-1]) if not np.isnan(tm_all.iloc[-1]) else 0
-        mr_now = float(mr_all.iloc[-1]) if not np.isnan(mr_all.iloc[-1]) else 0
-        vr_now = float(vr_all.iloc[-1]) if not np.isnan(vr_all.iloc[-1]) else 0
+        def _trailing_mean(series: pd.Series, window: int = CURRENT_FACTOR_WINDOW_DAYS) -> float:
+            vals = series.dropna()
+            if vals.empty:
+                return 0.0
+            window = min(window, len(vals))
+            return float(vals.iloc[-window:].mean())
+
+        tm_now = _trailing_mean(tm_daily)
+        mr_now = _trailing_mean(mr_daily)
+        vr_now = _trailing_mean(vr_daily)
         tm_z = (tm_now - cfg["tm_mean"]) / cfg["tm_std"] if cfg["tm_std"] > 0 else 0
         mr_z = (mr_now - cfg["mr_mean"]) / cfg["mr_std"] if cfg["mr_std"] > 0 else 0
         vr_z = (vr_now - cfg["vr_mean"]) / cfg["vr_std"] if cfg["vr_std"] > 0 else 0
+
+        # ── Micro-period factors (2026W33) ─────────────────────
+        # 3-7 day horizon signals: 5-day momentum, intra-week vol ratio,
+        # and the weekend-gap effect.  Current value = trailing 60-day mean
+        # (MICRO_FACTOR_WINDOW_DAYS): the daily 5-day factors are far noisier
+        # than the trend factors, so a short window captures live short-term
+        # state while staying robust to single-day spikes.
+        mm_daily = micro_momentum(prices)
+        iv_daily = intraweek_volatility(prices)
+        gs_daily = gap_signal(prices)
+        mm_now = _trailing_mean(mm_daily, MICRO_FACTOR_WINDOW_DAYS)
+        iv_now = _trailing_mean(iv_daily, MICRO_FACTOR_WINDOW_DAYS)
+        gs_now = _trailing_mean(gs_daily, MICRO_FACTOR_WINDOW_DAYS)
+        mm_z = (mm_now - cfg["mm_mean"]) / cfg["mm_std"] if cfg["mm_std"] > 0 else 0
+        iv_z = (iv_now - cfg["iv_mean"]) / cfg["iv_std"] if cfg["iv_std"] > 0 else 0
+        gs_z = (gs_now - cfg["gs_mean"]) / cfg["gs_std"] if cfg["gs_std"] > 0 else 0
+        # Intraday micro-factors (2026W34): daily 5-day factors from the OHLC
+        # frame, trailing-60d mean (same convention as mm/iv/gs), z-scored
+        # against the annual distribution stored by fit_market.
+        if ohlc is not None:
+            cm_daily = close_momentum(ohlc)
+            cl_daily = close_location(ohlc)
+        else:
+            cm_daily = pd.Series(0.0, index=prices.index)
+            cl_daily = pd.Series(0.0, index=prices.index)
+        cm_now = _trailing_mean(cm_daily, MICRO_FACTOR_WINDOW_DAYS)
+        cl_now = _trailing_mean(cl_daily, MICRO_FACTOR_WINDOW_DAYS)
+        cm_z = (cm_now - cfg["cm_mean"]) / cfg["cm_std"] if cfg["cm_std"] > 0 else 0
+        cl_z = (cl_now - cfg["cl_mean"]) / cfg["cl_std"] if cfg["cl_std"] > 0 else 0
+        # Combined micro score (2026W33 formula, restored 2026W34): mm leads,
+        # gap captures weekend news, iv is an amplifier.  The 2026W34 intraday
+        # factors (cm/cl) are deliberately EXCLUDED from the blend: they live
+        # on a different raw scale (daily returns vs ratios) so weighting them
+        # diluted the W33 factors, and their directional power is applied only
+        # through the evidence gate below — never through the confidence
+        # modulator.
+        micro_score = round(0.50 * mm_now + 0.30 * gs_now + 0.20 * iv_now, 4)
 
         # Market-specific AR(1) decay coefficient
         ar_coeff = self._market_ar_coeffs.get(market, 0.75)
@@ -725,6 +950,12 @@ class HighConfidencePredictor:
             "tm": round(tm_now, 4), "tm_z": round(tm_z, 2),
             "mr": round(mr_now, 4), "mr_z": round(mr_z, 2),
             "vr": round(vr_now, 4), "vr_z": round(vr_z, 2),
+            "mm": round(mm_now, 4), "mm_z": round(mm_z, 2),
+            "iv": round(iv_now, 4), "iv_z": round(iv_z, 2),
+            "gs": round(gs_now, 4), "gs_z": round(gs_z, 2),
+            "cm": round(cm_now, 4), "cm_z": round(cm_z, 2),
+            "cl": round(cl_now, 4), "cl_z": round(cl_z, 2),
+            "micro_score": micro_score,
         }
 
         # ── Regime (regime) distance check (P3: 2026W30) ──
@@ -732,6 +963,8 @@ class HighConfidencePredictor:
         regime_shift = False
         regime_unfamiliar = False
         confidence = cfg["accuracy"]
+        micro_effect = None   # 2026W33: 'align' | 'conflict' | None
+        micro_evidence = None  # 2026W34: 'lift' | 'downgrade' | None
 
         if regime_dist is not None and regime_dist > REGIME_DISTANCE_NEUT:
             regime_shift = True
@@ -783,21 +1016,27 @@ class HighConfidencePredictor:
                 f"{['BEAR','NEUT','BULL'][signal + 1]}) — {over_reason}"
             )
 
-        # ── P1: VIX-EPU conflict check (overrides to NEUT) ────
+        # ── P1: VIX-EPU conflict check (2026W32: discount, not veto) ──
+        # A calm VIX while monthly EPU reads P99 means the lagging EPU
+        # overstates risk.  The signal survives at reduced confidence;
+        # zeroing it (W31 behavior) silenced 11/13 markets.  ×0.85 is a
+        # visible warning — heavier discounts stack with the regime-distance
+        # haircut and suppress most markets (W31: 6 markets dropped below
+        # the 55% publication bar for one global VIX/EPU condition).
         conflict_override = False
         if vix_epu_conflict and signal != 0:
             original_signal = signal
-            signal = 0
             conflict_override = True
+            confidence *= 0.85
             logger.info(
-                f"  {market}: VIX-EPU conflict override "
-                f"({['BEAR','NEUT','BULL'][original_signal + 1]} → NEUT) — "
-                f"VIX={self._vix_now:.1f} vs EPU={epu_value:.0f} disagree"
+                f"  {market}: VIX-EPU conflict — confidence "
+                f"{cfg['accuracy']:.0%} → {confidence:.0%} "
+                f"(VIX={self._vix_now:.1f} vs EPU={epu_value:.0f} disagree)"
             )
 
         # ── P0: Flat market check (overrides BULL/BEAR to NEUT) ──
         flat_market = False
-        if not overheated and not conflict_override and signal != 0:
+        if not overheated and signal != 0:
             is_flat, flat_reason = self._check_flat_market(prices)
             if is_flat:
                 original_signal = signal
@@ -826,39 +1065,104 @@ class HighConfidencePredictor:
                     f"sentiment={sd} vs model={'BULL' if model_dir > 0 else 'BEAR'}"
                 )
 
-        # ── P2: Extreme EPU regime downgrade (2026W31) ──
-        extreme_epu_neut = False
-        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0:
-            is_extreme_epu = self._is_high_epu(epu_value * 0.85, epu_label)
-            if is_extreme_epu and abs(pred) < 0.15:
-                extreme_epu_neut = True
-                signal = 0
-
-        # ── Cycle-aware tilt (W31: stagflation/recession → risk-off) ──
+        # ── Cycle phase (2026W32: informational, not a veto) ──
+        # W31 evidence: the stagflation label (US PMI 48.7, CPI 3.0%) is a
+        # coarse US-macro read applied globally; all 7 BULL signals it
+        # suppressed in W31 rose the same week (+0.2%..+1.6%).  Removing it
+        # would have scored 7/9 (78%) on W31 vs 0 actionable signals.
         cycle_tilt_applied = False
-        if cycle_phase != "unknown" and signal != 0:
-            if cycle_phase == "stagflation" and signal > 0:
-                signal = 0
-                cycle_tilt_applied = True
-            elif cycle_phase == "recession" and signal > 0:
-                signal = 0
-                cycle_tilt_applied = True
 
         # ── P1: Low-conviction check (overrides weak BULL/BEAR → NEUT) ──
         low_confidence = False
-        if not overheated and not conflict_override and not flat_market and not sentiment_overridden and signal != 0 and not extreme_epu_neut and not cycle_tilt_applied:
+        if not overheated and not flat_market and not sentiment_overridden and signal != 0 and not cycle_tilt_applied:
             signal, low_confidence = self._check_low_conviction(pred, factors, signal, market)
-        elif extreme_epu_neut:
-            low_confidence = True
+
+        # ── Micro-factor confidence modulator (2026W33) ────────
+        # Short-term (3-7 day) signals adjust confidence in the model's
+        # direction.  Alignment → small boost; divergence → discount.
+        # Never flips the signal and never forces NEUT: a strong trend
+        # survives a weak micro cross-current (W32 de-blanketing lesson).
+        if signal != 0 and not overheated and not sentiment_overridden:
+            if micro_score > MICRO_ALIGN_THRESHOLD:
+                micro_effect = "align" if signal > 0 else "conflict"
+            elif micro_score < -MICRO_ALIGN_THRESHOLD:
+                micro_effect = "align" if signal < 0 else "conflict"
+            if micro_effect == "align":
+                confidence = min(confidence * (1.0 + MICRO_ALIGN_BOOST), 0.99)
+                logger.info(
+                    f"  {market}: micro-factor alignment (score={micro_score:+.3f}) "
+                    f"— confidence {cfg['accuracy']:.0%} → {confidence:.0%}"
+                )
+            elif micro_effect == "conflict":
+                confidence = confidence * (1.0 - MICRO_CONFLICT_DISCOUNT)
+                logger.info(
+                    f"  {market}: micro-factor divergence (score={micro_score:+.3f}) "
+                    f"— confidence {cfg['accuracy']:.0%} → {confidence:.0%}"
+                )
+
+        # ── Intraday micro-factor evidence gate (2026W34) ─────
+        # close_momentum / close_location carry VERIFIED directional IC, so on
+        # hard evidence they may influence direction — but only in weak states.
+        # Both z-scores must agree and each clear MICRO_EVIDENCE_Z_THRESHOLD.
+        #   - a weak NEUT (low-conviction / below-threshold |pred|) may be
+        #     lifted to a weak BULL/BEAR (MICRO_EVIDENCE_LIFT_RET) — only in
+        #     the direction of the model's own raw lean sign(pred), so the
+        #     evidence corroborates a weak view, never invents or flips one;
+        #   - a weak BULL/BEAR (all 3-factor |z| < 1.5 AND |pred| <
+        #     MICRO_EVIDENCE_STRONG_RET) → NEUT when evidence opposes.
+        # Strong 3-factor signals are never touched, and a signal zeroed by
+        # the overheat / flat / sentiment gates is not resurrected.  BULL↔BEAR
+        # flips remain impossible.
+        expected_ret = float(pred)
+        if not overheated and not flat_market and not sentiment_overridden:
+            cm_sign = 1 if cm_z >= MICRO_EVIDENCE_Z_THRESHOLD else (-1 if cm_z <= -MICRO_EVIDENCE_Z_THRESHOLD else 0)
+            cl_sign = 1 if cl_z >= MICRO_EVIDENCE_Z_THRESHOLD else (-1 if cl_z <= -MICRO_EVIDENCE_Z_THRESHOLD else 0)
+            if cm_sign != 0 and cm_sign == cl_sign:
+                strong_z = max(abs(tm_z), abs(mr_z), abs(vr_z)) >= LOW_CONVICTION_Z_THRESHOLD
+                strong_ret = abs(pred) >= MICRO_EVIDENCE_STRONG_RET
+                pred_lean = 1 if pred > 0 else (-1 if pred < 0 else 0)
+                if signal == 0 and not strong_z and not strong_ret and pred_lean != 0 and cm_sign == pred_lean:
+                    signal = cm_sign
+                    expected_ret = cm_sign * MICRO_EVIDENCE_LIFT_RET
+                    low_confidence = False
+                    micro_evidence = "lift"
+                    logger.info(
+                        f"  {market}: micro evidence lift (cm_z={cm_z:+.1f}σ "
+                        f"cl_z={cl_z:+.1f}σ) → {'BULL' if signal > 0 else 'BEAR'}"
+                    )
+                elif signal != 0 and not strong_z and not strong_ret and cm_sign != (1 if signal > 0 else -1):
+                    signal = 0
+                    micro_evidence = "downgrade"
+                    logger.info(
+                        f"  {market}: micro evidence downgrade (cm_z={cm_z:+.1f}σ "
+                        f"cl_z={cl_z:+.1f}σ oppose) → NEUT"
+                    )
+
+        # ── 2026W34: risk-off BULL discount ──────────────────
+        # A fast VIX spike (> +10% / 5d) is a directional risk-off signal.
+        # W34: VIX +11.2% in 5d (still < P80 24.2) while all 6 BULLs reversed
+        # (0/6).  Discount surviving BULL confidence ×0.70 — enough to push
+        # marginal BULLs under the 55% publication bar — but NOT a NEUT veto:
+        # a hard veto would re-import W31's 13/13 over-suppression.
+        vix_risk_off_applied = False
+        if vix_risk_off and signal == 1:
+            vix_risk_off_applied = True
+            confidence *= VIX_RISK_OFF_BULL_DISCOUNT
+            logger.info(
+                f"  {market}: VIX risk-off (5d {self._vix_trend_5d:+.1%}) — "
+                f"BULL confidence ×{VIX_RISK_OFF_BULL_DISCOUNT:.2f} → {confidence:.0%}"
+            )
 
         # ── Build detail string ──────────────────────────────
         detail_parts = []
         if overheated:
             detail_parts.append(over_reason)
         if conflict_override:
-            detail_parts.append(f"⚠ VIX-EPU冲突→NEUT (VIX={self._vix_now:.1f}, EPU={epu_value:.0f})")
-        if extreme_epu_neut:
-            detail_parts.append("P99 EPU极端→NEUT (|pred|<15%)")
+            detail_parts.append(f"⚠ VIX-EPU冲突→置信度×0.85 (VIX={self._vix_now:.1f}, EPU={epu_value:.0f})")
+        if vix_risk_off_applied:
+            detail_parts.append(
+                f"⚠ VIX急升(5d {self._vix_trend_5d:+.1%})→BULL置信度×{VIX_RISK_OFF_BULL_DISCOUNT:.2f}"
+            )
         if flat_market:
             detail_parts.append(f"平盘→NEUT (|10d ret| < {FLAT_MARKET_THRESHOLD:.1%})")
         if sentiment_overridden:
@@ -894,6 +1198,20 @@ class HighConfidencePredictor:
         elif vr_z > 0.5:
             detail_parts.append("低波动")
 
+        # Micro-factor modulation + descriptions (2026W33)
+        if micro_effect == "align":
+            detail_parts.append(f"微周期共振→置信度×{1.0 + MICRO_ALIGN_BOOST:.2f}")
+        elif micro_effect == "conflict":
+            detail_parts.append(f"微周期背离→置信度×{1.0 - MICRO_CONFLICT_DISCOUNT:.2f}")
+        if abs(mm_z) >= 1.0 or abs(iv_z) >= 1.0 or abs(gs_z) >= 1.0:
+            detail_parts.append(f"微: 动量{mm_z:+.1f}σ 波动{iv_z:+.1f}σ 跳空{gs_z:+.1f}σ")
+
+        # Intraday micro-factor evidence (2026W34)
+        if micro_evidence == "lift":
+            detail_parts.append(f"微证据提升→{'BULL' if signal > 0 else 'BEAR'}")
+        elif micro_evidence == "downgrade":
+            detail_parts.append("微证据背离→NEUT")
+
         # Add VIX context when available
         if self._vix_active and self._vix_now is not None:
             if self._vix_trend_5d is not None and abs(self._vix_trend_5d) > 0.03:
@@ -904,10 +1222,20 @@ class HighConfidencePredictor:
         if regime_unfamiliar and regime_dist is not None:
             detail_parts.append(f"⚠ 陌生制度(D={regime_dist:.1f}σ)")
 
+        # Tier from post-discount confidence (2026W32): a market whose
+        # confidence was discounted below the publication bars must not
+        # be presented as "Tier 1 actionable".
+        if confidence >= 0.70:
+            tier = 1
+        elif confidence >= 0.55:
+            tier = 2
+        else:
+            tier = 3
+
         return MarketPrediction(
             market=market,
             signal=signal,
-            expected_ret=round(float(pred), 4),
+            expected_ret=round(expected_ret, 4),
             confidence=round(confidence, 4),
             tier=tier,
             regime=f"{regime_key}_{epu_label}" if (epu_label != "us" and regime_key not in ("normal", "high_epu")) else regime_key,
@@ -920,6 +1248,8 @@ class HighConfidencePredictor:
             regime_distance=round(regime_dist, 2) if regime_dist is not None else None,
             regime_shift=regime_shift,
             regime_unfamiliar=regime_unfamiliar,
+            micro_effect=micro_effect,
+            micro_evidence=micro_evidence,
         )
 
     def compute_rolling_backtest(
@@ -1000,6 +1330,7 @@ class HighConfidencePredictor:
         epu_value: float,
         epu_values: Dict[str, float] = None,
         cycle_phase: str = "unknown",
+        ohlc: Optional[Dict[str, pd.DataFrame]] = None,
     ) -> List[MarketPrediction]:
         """Generate predictions for all fitted markets.
 
@@ -1008,6 +1339,9 @@ class HighConfidencePredictor:
             epu_value:     Default US EPU value.
             epu_values:    Per-label EPU values (e.g. {'us': 350, 'china': 376}).
                            Falls back to epu_value if a label is not found.
+            ohlc:          Optional Market → OHLC frame mapping for the
+                           2026W34 intraday factors.  Omitted markets stay
+                           neutral (cm/cl z = 0), preserving legacy behavior.
         """
         if epu_values is None:
             epu_values = {"us": epu_value}
@@ -1018,7 +1352,8 @@ class HighConfidencePredictor:
                 continue
             epu_label = self._market_epu_label.get(market, "us")
             epu_val = epu_values.get(epu_label, epu_value)
-            pred = self.predict(market, px, epu_val, cycle_phase=cycle_phase)
+            market_ohlc = ohlc.get(market) if ohlc is not None else None
+            pred = self.predict(market, px, epu_val, cycle_phase=cycle_phase, ohlc=market_ohlc)
             results.append(pred)
         results.sort(key=lambda x: -x.confidence)
         return results
@@ -1028,4 +1363,10 @@ __all__ = ["MarketPrediction", "HighConfidencePredictor",
            "EMERGING_MARKETS", "DEVELOPED_MARKETS", "GROUP_EPU_THRESHOLDS",
            "OVERHEAT_NEUT_THRESHOLD", "OVERHEAT_BEAR_THRESHOLD",
            "FLAT_MARKET_THRESHOLD",
-           "LOW_CONVICTION_RET_THRESHOLD", "LOW_CONVICTION_Z_THRESHOLD"]
+           "LOW_CONVICTION_RET_THRESHOLD", "LOW_CONVICTION_Z_THRESHOLD",
+           "REGIME_DISTANCE_WARN", "REGIME_DISTANCE_NEUT",
+           "CURRENT_FACTOR_WINDOW_DAYS",
+           "MICRO_FACTOR_WINDOW_DAYS", "MICRO_ALIGN_THRESHOLD",
+           "MICRO_ALIGN_BOOST", "MICRO_CONFLICT_DISCOUNT",
+           "MICRO_EVIDENCE_Z_THRESHOLD", "MICRO_EVIDENCE_LIFT_RET",
+           "MICRO_EVIDENCE_STRONG_RET"]

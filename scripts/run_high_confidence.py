@@ -32,14 +32,16 @@ MARKET_TICKERS = {
 }
 TIER_LABELS = {1: "★★★ 可操作", 2: "★★ 参考(1年)", 3: "☆ 不可用"}
 
-# ── Market-specific parameters (2026W27) ──────────────────────────
-# HK: China EPU (verified +10pp improvement vs US EPU, now 77%)
+# ── Market-specific parameters (2026W32) ──────────────────────
+# HK: China EPU (verified +10pp improvement vs US EPU, now 77%).
+#     AR(1) 0.60 → 0.75 (2026W32): preserve HSI's strong trend signal
+#     (July 2026: +12%/mo rally that the 0.60 decay dampened).
 # CN: REVERTED to US EPU — China EPU caused -10pp regression (65→55%).
 #     A-shares dominated by retail flow/policy directives, not EPU.
 #     Higher signal threshold + lower AR to reduce false signals.
 # IN: only 19y data, 0 normal EPU years → single-model fallback.
 MARKET_PARAMS = {
-    "HK": {"ar_coeff": 0.60, "signal_threshold": 0.05, "epu_label": "china"},
+    "HK": {"ar_coeff": 0.75, "signal_threshold": 0.05, "epu_label": "china"},
     "CN": {"ar_coeff": 0.55, "signal_threshold": 0.06, "epu_label": "us"},
     "BR": {"ar_coeff": 0.65, "signal_threshold": 0.05, "epu_label": "us"},
     "IN": {"ar_coeff": 0.65, "signal_threshold": 0.03, "epu_label": "us"},
