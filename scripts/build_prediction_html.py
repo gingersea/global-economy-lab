@@ -1198,8 +1198,23 @@ def main():
             </div>
         </div>"""
 
-    # Load last week prediction (W33, 8/10-8/16)
-    last_week_pred = load_json(OUTPUT_DIR / "archive" / "2026-08-22" / "weekly_prediction.json")
+    # Load last week prediction — auto-detect newest archive dir before today.
+    # Must match auto_predict.py's actual_accuracy prior (same < today filter),
+    # so the prior-week signal aligns with the prior-week actual returns.
+    last_week_pred = None
+    _archive_root = OUTPUT_DIR / "archive"
+    if _archive_root.exists():
+        _prev_dirs = sorted([
+            d for d in _archive_root.iterdir()
+            if d.is_dir() and d.name < today.strftime("%Y-%m-%d")
+        ])
+        if _prev_dirs:
+            _cand = _prev_dirs[-1] / "weekly_prediction.json"
+            if _cand.exists():
+                last_week_pred = load_json(_cand)
+    if last_week_pred is None:
+        # Fallback (only on a truly empty archive, e.g. first-ever run): avoid crash.
+        last_week_pred = cur_pred
 
     # Build last-week actual returns from the current JSON's actual_accuracy
     # (compute_actual_accuracy already scored the prior week's predictions).
