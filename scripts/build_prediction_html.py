@@ -1199,7 +1199,7 @@ def main():
         </div>"""
 
     # Load last week prediction (W33, 8/10-8/16)
-    last_week_pred = load_json(OUTPUT_DIR / "archive" / "2026-08-09" / "weekly_prediction.json")
+    last_week_pred = load_json(OUTPUT_DIR / "archive" / "2026-08-22" / "weekly_prediction.json")
 
     # Build last-week actual returns from the current JSON's actual_accuracy
     # (compute_actual_accuracy already scored the prior week's predictions).
