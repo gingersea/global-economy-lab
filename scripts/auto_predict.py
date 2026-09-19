@@ -282,8 +282,8 @@ def compute_actual_accuracy(predictions, prior_json_path: Path, today: date):
         start_date = date(int(year), m1, d1)
         prior_end_date = date(int(year), m2, d2)
     else:
-        # Fallback: use 7 days ago
-        start_date = today - timedelta(days=7)
+        # Fallback (阶段2 月频): use ~1 calendar month (~21 trading days) ago
+        start_date = today - timedelta(days=31)
         prior_end_date = today
 
     logger.info(f"Actual accuracy: prior period ~{start_date} → ~{prior_end_date} (today={today})")
@@ -358,7 +358,6 @@ def compute_actual_accuracy(predictions, prior_json_path: Path, today: date):
 def run_predictions(vix_series=None):
     """Returns (predictions_list, epu_values, is_high_epu, vix_info, epu_percentile, predictor)."""
     prices = load_prices()
-    ohlc = load_ohlc()  # 2026W34 intraday micro-factors
     epu_a = load_epu()
     china_epu_a = load_china_epu()
     raw_epu_monthly = load_raw_epu_monthly()
@@ -396,19 +395,6 @@ def run_predictions(vix_series=None):
             "active": predictor._vix_active,
         }
 
-    # Load sentiment/flow data (graceful — continues on failure)
-    sentiment_dir = "N/A"
-    try:
-        from src.data_fetcher.sentiment import get_put_call_ratio, get_treasury_spread
-        pcr_df = get_put_call_ratio(start_date="2000-01-01")
-        spread_df = get_treasury_spread(start_date="2000-01-01")
-        predictor.fit_sentiment(pcr_df=pcr_df, spread_df=spread_df)
-        if predictor._sentiment_active:
-            _, sentiment_dir = predictor._compute_sentiment_factor()
-            logger.info(f"Sentiment factor: {sentiment_dir}")
-    except Exception as e:
-        logger.warning(f"Sentiment loading skipped: {e}")
-
     # Load economic cycle position
     cycle_phase = "unknown"
     cycle_label = "Unknown 未知"
@@ -441,15 +427,14 @@ def run_predictions(vix_series=None):
         try:
             epu_label = MARKET_PARAMS.get(market, {}).get("epu_label", "us")
             epu_data = china_epu_a if epu_label == "china" else epu_a
-            result = predictor.fit_market(market, px, epu_data, epu_label=epu_label,
-                                          ohlc=ohlc.get(market) if market in ohlc else None)
+            result = predictor.fit_market(market, px, epu_data, epu_label=epu_label)
             if result:
                 ar = MARKET_PARAMS.get(market, {}).get("ar_coeff", 0.75)
                 group = "EM" if market in EMERGING_MARKETS else "DM"
                 epu_pct = result.get("group_pct", predictor.epu_threshold_pct)
                 logger.info(
                     f"  {market:6s} [{group}]: acc={result['accuracy']:.0%} "
-                    f"(n={result['n_years']}y) EPU={epu_label} P{epu_pct:.0f} AR(1)={ar:.2f}"
+                    f"(n={result['n_years']}m) EPU={epu_label} P{epu_pct:.0f} AR(1)={ar:.2f}"
                 )
         except Exception as e:
             logger.warning(f"  {market}: fit failed — {e}")
@@ -458,7 +443,6 @@ def run_predictions(vix_series=None):
         prices, epu_now,
         epu_values={"us": epu_now, "china": china_epu_now},
         cycle_phase=cycle_phase,
-        ohlc=ohlc,
     )
 
     # Compute rolling 5-year backtest for each market
@@ -475,16 +459,9 @@ def run_predictions(vix_series=None):
             except Exception as e:
                 logger.debug(f"  rolling_accuracy {p.market}: {e}")
 
-    # Attach sentiment factor direction to each prediction
-    for p in predictions:
-        p.sentiment_factor = sentiment_dir
-
     # Top-level regime label reflects the EPU regime that drives model
-    # selection (2026W34 fix).  The previous VIX-level gate (VIX > P80)
-    # mislabeled EPU-P99 weeks as "NORMAL" whenever VIX stayed calm — e.g.
-    # W34 showed regime "NORMAL" with EPU 350.1 (P99.1) because VIX 15.84
-    # was below P80 24.2.  VIX state is surfaced separately in the JSON
-    # "vix" field, and per-market VIX risk-off is handled inside predict().
+    # selection (2026W34 fix).  VIX state is surfaced separately in the JSON
+    # "vix" field.
     is_high = predictor._is_high_epu(epu_now, "us")
 
     return predictions, {"us": epu_now, "china": china_epu_now}, is_high, vix_info, epu_percentile, predictor, {
@@ -515,12 +492,9 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
         elif hasattr(p, 'price_date'):
             last_date = str(p.price_date) if p.price_date else ""
 
-        overheat = getattr(p, 'overheat', False)
         flat_market = getattr(p, 'flat_market', False)
-        vix_epu_conflict = getattr(p, 'vix_epu_conflict', False)
         low_confidence = getattr(p, 'low_confidence', False)
         rolling_acc = getattr(p, 'rolling_accuracy', None)
-        sentiment_factor = getattr(p, 'sentiment_factor', 'N/A')
         group = "EM" if p.market in EMERGING_MARKETS else "DM"
 
         return {
@@ -533,29 +507,13 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
             "tm_z": round(float(p.factors.get("tm_z", 0)), 2),
             "mr_z": round(float(p.factors.get("mr_z", 0)), 2),
             "vr_z": round(float(p.factors.get("vr_z", 0)), 2),
-            # Micro-period factors (2026W33): 5d momentum / intra-week vol / weekend gap
-            "mm_z": round(float(p.factors.get("mm_z", 0)), 2),
-            "iv_z": round(float(p.factors.get("iv_z", 0)), 2),
-            "gs_z": round(float(p.factors.get("gs_z", 0)), 2),
-            # Intraday micro-factors (2026W34): close momentum / close location
-            "cm_z": round(float(p.factors.get("cm_z", 0)), 2),
-            "cl_z": round(float(p.factors.get("cl_z", 0)), 2),
-            "micro_score": round(float(p.factors.get("micro_score", 0)), 3),
-            "micro_effect": getattr(p, 'micro_effect', None),
-            "micro_evidence": getattr(p, 'micro_evidence', None),
             "detail": getattr(p, 'detail', ''),
             "regime": getattr(p, 'regime', 'normal'),
             "last_date": last_date,
-            "overheat": overheat,
             "flat_market": flat_market,
-            "vix_epu_conflict": vix_epu_conflict,
             "low_confidence": low_confidence,
             "rolling_accuracy": rolling_acc,
-            "sentiment_factor": sentiment_factor,
             "group": group,
-            "regime_distance": round(float(p.regime_distance), 2) if getattr(p, 'regime_distance', None) is not None else None,
-            "regime_shift": getattr(p, 'regime_shift', False),
-            "regime_unfamiliar": getattr(p, 'regime_unfamiliar', False),
         }
 
     # Count signals
@@ -1112,65 +1070,31 @@ def main():
             logger.info(f"  VIX: {vix_info['current']:.1f} (5d: {vix_info.get('trend_5d',0):+.1%})")
         logger.info(f"  Signals: {sdist.get('BULL',0)} BULL / {sdist.get('NEUT',0)} NEUT / {sdist.get('BEAR',0)} BEAR")
         flat_count = sum(1 for m in data["markets"] if m.get("flat_market"))
-        conflict_count = sum(1 for m in data["markets"] if m.get("vix_epu_conflict"))
-        overheat_count = sum(1 for m in data["markets"] if m.get("overheat"))
         low_conf_count = sum(1 for m in data["markets"] if m.get("low_confidence"))
-        micro_effect_count = sum(1 for m in data["markets"] if m.get("micro_effect"))
-        micro_evidence_count = sum(1 for m in data["markets"] if m.get("micro_evidence"))
-        regime_shifted = data.get("regime_shifted_count", 0)
-        regime_warned = data.get("regime_warned_count", 0)
-        if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted or regime_warned or micro_effect_count or micro_evidence_count:
+        if flat_count or low_conf_count:
             parts = []
-            if overheat_count:
-                parts.append(f"过热:{overheat_count}")
             if flat_count:
                 parts.append(f"平盘→NEUT:{flat_count}")
-            if conflict_count:
-                parts.append(f"VIX-EPU冲突:{conflict_count}")
             if low_conf_count:
                 parts.append(f"低信念→NEUT:{low_conf_count}")
-            if micro_effect_count:
-                parts.append(f"微周期调节:{micro_effect_count}")
-            if micro_evidence_count:
-                parts.append(f"微证据:{micro_evidence_count}")
-            if regime_shifted:
-                parts.append(f"制度偏离强制NEUT:{regime_shifted}")
-            if regime_warned:
-                parts.append(f"陌生制度:{regime_warned}")
             logger.info(f"  Overrides: {' | '.join(parts)}")
         logger.info(f"  Tier 1 (≥70%): {len(tier1)} markets")
         for m in tier1:
             tags = []
-            if m.get("overheat"):
-                tags.append("过热")
             if m.get("flat_market"):
                 tags.append("平盘→NEUT")
-            if m.get("vix_epu_conflict"):
-                tags.append("VIX-EPU冲突")
-            if m.get("regime_shift"):
-                tags.append("制度偏离NEUT")
-            elif m.get("regime_unfamiliar"):
-                tags.append("陌生制度")
             tag_str = f" [{'|'.join(tags)}]" if tags else ""
             logger.info(f"    {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
         if tier2:
             logger.info(f"  Tier 2 (55-70%): {len(tier2)} markets")
             for m in tier2:
                 tags = []
-                if m.get("overheat"):
-                    tags.append("过热")
                 if m.get("flat_market"):
                     tags.append("平盘→NEUT")
-                if m.get("vix_epu_conflict"):
-                    tags.append("VIX-EPU冲突")
-                if m.get("regime_shift"):
-                    tags.append("制度偏离NEUT")
-                elif m.get("regime_unfamiliar"):
-                    tags.append("陌生制度")
                 tag_str = f" [{'|'.join(tags)}]" if tags else ""
                 logger.info(f"    {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
         if actual_accuracy.get("hit_rate") is not None:
-            logger.info(f"  Actual accuracy (prior week): {actual_accuracy['hit_rate']:.1%} ({actual_accuracy['hits']}/{actual_accuracy['total_scored']})")
+            logger.info(f"  Actual accuracy (prior month): {actual_accuracy['hit_rate']:.1%} ({actual_accuracy['hits']}/{actual_accuracy['total_scored']})")
         logger.info(f"\n  Output: {output_dir}")
         logger.info(f"  Archive: {archive_dir}")
         logger.info("=" * 64)
@@ -1230,62 +1154,31 @@ def main():
     if china_epu_val != epu_val:
         logger.info(f"  China EPU: {china_epu_val:.0f} (HK uses for regime)")
     flat_count = sum(1 for m in data["markets"] if m.get("flat_market"))
-    conflict_count = sum(1 for m in data["markets"] if m.get("vix_epu_conflict"))
-    overheat_count = sum(1 for m in data["markets"] if m.get("overheat"))
     low_conf_count = sum(1 for m in data["markets"] if m.get("low_confidence"))
-    micro_evidence_count = sum(1 for m in data["markets"] if m.get("micro_evidence"))
-    regime_shifted_sum = data.get("regime_shifted_count", 0)
-    regime_warned_sum = data.get("regime_warned_count", 0)
-    if flat_count or conflict_count or overheat_count or low_conf_count or regime_shifted_sum or regime_warned_sum or micro_evidence_count:
+    if flat_count or low_conf_count:
         parts = []
-        if overheat_count:
-            parts.append(f"过热:{overheat_count}")
         if flat_count:
             parts.append(f"平盘→NEUT:{flat_count}")
-        if conflict_count:
-            parts.append(f"VIX-EPU冲突:{conflict_count}")
         if low_conf_count:
             parts.append(f"低信念→NEUT:{low_conf_count}")
-        if micro_evidence_count:
-            parts.append(f"微证据:{micro_evidence_count}")
-        if regime_shifted_sum:
-            parts.append(f"制度偏离强制NEUT:{regime_shifted_sum}")
-        if regime_warned_sum:
-            parts.append(f"陌生制度:{regime_warned_sum}")
         logger.info(f"  Overrides: {' | '.join(parts)}")
     logger.info(f"  Tier 1 (≥70%): {len(tier1)} markets")
     for m in tier1:
         tags = []
-        if m.get("overheat"):
-            tags.append("过热")
         if m.get("flat_market"):
             tags.append("平盘→NEUT")
-        if m.get("vix_epu_conflict"):
-            tags.append("VIX-EPU冲突")
-        if m.get("regime_shift"):
-            tags.append("制度偏离NEUT")
-        elif m.get("regime_unfamiliar"):
-            tags.append("陌生制度")
         tag_str = f" [{'|'.join(tags)}]" if tags else ""
         logger.info(f"    [{m.get('group','DM')}] {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
     if tier2:
         logger.info(f"  Tier 2 (55-70%): {len(tier2)} markets")
         for m in tier2:
             tags = []
-            if m.get("overheat"):
-                tags.append("过热")
             if m.get("flat_market"):
                 tags.append("平盘→NEUT")
-            if m.get("vix_epu_conflict"):
-                tags.append("VIX-EPU冲突")
-            if m.get("regime_shift"):
-                tags.append("制度偏离NEUT")
-            elif m.get("regime_unfamiliar"):
-                tags.append("陌生制度")
             tag_str = f" [{'|'.join(tags)}]" if tags else ""
             logger.info(f"    [{m.get('group','DM')}] {m['name_cn']:12s} {m['signal']:5s}{tag_str:20s} {m['pred_ret']:+.1%} acc={m['accuracy']:.1%}")
     if actual_accuracy.get("hit_rate") is not None:
-        logger.info(f"  Actual accuracy (prior week): {actual_accuracy['hit_rate']:.1%} ({actual_accuracy['hits']}/{actual_accuracy['total_scored']})")
+        logger.info(f"  Actual accuracy (prior month): {actual_accuracy['hit_rate']:.1%} ({actual_accuracy['hits']}/{actual_accuracy['total_scored']})")
     logger.info(f"\n  Output: {output_dir}")
     logger.info(f"  Archive: {archive_dir}")
     logger.info("=" * 64)

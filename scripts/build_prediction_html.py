@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Build full-featured prediction.html with all sections:
-  - 上周总结 (last week review)
-  - 上月总结 (monthly review)
-  - 本周预测 (current prediction)
+Build full-featured prediction.html with all sections (阶段2: 月频):
+  - 上月总结 / 复盘
+  - 本月预测 (current prediction)
   - YTD bar chart
   - Key judgments
-  - Next week outlook
+  - Next month outlook
 
 Data sources:
   - output/weekly_prediction.json (current prediction)
@@ -54,7 +53,6 @@ def compute_rolling_accuracy(num_weeks=4):
     per_market_total = {}  # market → total_scored
     tier1_hits = 0
     tier1_total = 0
-    micro_sum = {}         # market → lists of micro-factor z-scores across weeks
 
     for d in dirs[:num_weeks]:
         json_path = d / "weekly_prediction.json"
@@ -94,20 +92,6 @@ def compute_rolling_accuracy(num_weeks=4):
                     tier1_hits += 1 if mkt_hit else 0
                     tier1_total += 1
 
-        # Micro-period factor stats (2026W33): aggregate new-factor z-scores
-        # per market across the rolling window, for the diagnostics output.
-        # 2026W34: intraday micro-factors (cm_z/cl_z) join the same buckets.
-        for m in data.get("markets", []):
-            mkt_code = m["market"]
-            entry = micro_sum.setdefault(mkt_code, {"mm_z": [], "iv_z": [], "gs_z": [], "cm_z": [], "cl_z": [], "micro_score": []})
-            for k in ("mm_z", "iv_z", "gs_z", "cm_z", "cl_z"):
-                v = m.get(k)
-                if v is not None:
-                    entry[k].append(v)
-            ms = m.get("micro_score")
-            if ms is not None:
-                entry["micro_score"].append(ms)
-
     total_hits = sum(r["hits"] for r in weekly_rates)
     total_scored = sum(r["total"] for r in weekly_rates)
 
@@ -120,26 +104,6 @@ def compute_rolling_accuracy(num_weeks=4):
         if total > 0:
             per_market[mkt] = round(hits / total, 4)
 
-    # Micro-period factor market-level statistics (2026W33): mean z-scores
-    # of 5d momentum / intra-week vol / weekend gap per market over the
-    # rolling window.  2026W34: intraday cm_z/cl_z included.  Older archives
-    # without the fields contribute None.
-    micro_stats = {}
-    for mkt, arrs in micro_sum.items():
-        n = max(len(arrs["mm_z"]), len(arrs["iv_z"]), len(arrs["gs_z"]),
-                len(arrs["cm_z"]), len(arrs["cl_z"]), len(arrs["micro_score"]))
-        if n == 0:
-            continue
-        micro_stats[mkt] = {
-            "mm_z": round(sum(arrs["mm_z"]) / len(arrs["mm_z"]), 2) if arrs["mm_z"] else None,
-            "iv_z": round(sum(arrs["iv_z"]) / len(arrs["iv_z"]), 2) if arrs["iv_z"] else None,
-            "gs_z": round(sum(arrs["gs_z"]) / len(arrs["gs_z"]), 2) if arrs["gs_z"] else None,
-            "cm_z": round(sum(arrs["cm_z"]) / len(arrs["cm_z"]), 2) if arrs["cm_z"] else None,
-            "cl_z": round(sum(arrs["cl_z"]) / len(arrs["cl_z"]), 2) if arrs["cl_z"] else None,
-            "micro_score": round(sum(arrs["micro_score"]) / len(arrs["micro_score"]), 3) if arrs["micro_score"] else None,
-            "weeks": n,
-        }
-
     return {
         "rolling_hit_rate": rolling_hit_rate,
         "weekly_rates": weekly_rates,
@@ -147,7 +111,6 @@ def compute_rolling_accuracy(num_weeks=4):
         "per_market": per_market,
         "total_hits": total_hits,
         "total_scored": total_scored,
-        "micro_stats": micro_stats,
     }
 
 
@@ -336,42 +299,18 @@ def _rolling_accuracy_html(rolling):
     if t1_hr is not None:
         tier1_str = f'<div style="font-size:10px;color:#888;margin-top:2px">Tier1 滚动 {t1_hr:.0%}</div>'
 
-    # Micro-period factor market-level diagnostics (2026W33)
-    micro_html = ""
-    micro_stats = rolling.get("micro_stats") or {}
-    if micro_stats:
-        cells = []
-        for mkt in sorted(micro_stats):
-            s = micro_stats[mkt]
-
-            def _f(v, suf="σ"):
-                if v is None:
-                    return "N/A"
-                c = "#4caf50" if v > 0.3 else ("#f44336" if v < -0.3 else "#888")
-                return f'<span style="color:{c}">{v:+.2f}{suf}</span>'
-
-            cells.append(
-                f'{mkt}: 动量{_f(s.get("mm_z"))} 波动{_f(s.get("iv_z"))} '
-                f'跳空{_f(s.get("gs_z"))} 综合{_f(s.get("micro_score"), "")}'
-            )
-        micro_html = f"""
-        <div class="metric" style="grid-column:1/-1">
-            <div class="lbl">微周期因子 · 滚动{n_weeks}周市场级均值 (微动量/周内波动/跳空)</div>
-            <div style="font-size:11px;color:#888;margin-top:6px;line-height:1.8">{' &nbsp;·&nbsp; '.join(cells)}</div>
-        </div>"""
-
     return f"""
         <div class="metric">
-            <div class="lbl">滚动{n_weeks}周实际准确率</div>
+            <div class="lbl">滚动{n_weeks}期实际准确率</div>
             <div class="val" style="color:{acc_color}">{hr:.0%}</div>
             <div style="font-size:10px;color:#888;margin-top:4px">{total_hits}/{total_scored} 方向正确</div>
             {tier1_str}
         </div>
         <div class="metric">
-            <div class="lbl">滚动{n_weeks}周明细</div>
+            <div class="lbl">滚动{n_weeks}期明细</div>
             <div class="val" style="font-size:12px;line-height:1.4">{weekly_breakdown}</div>
             <div style="font-size:10px;color:#888;margin-top:4px">← 旧 | 新 →</div>
-        </div>{micro_html}"""
+        </div>"""
 
 
 def compare_prediction(pred_markets, actual_dict, pred_source_label="预测"):
@@ -422,7 +361,7 @@ def compare_prediction(pred_markets, actual_dict, pred_source_label="预测"):
 
 
 def build_last_week_review(prev_pred, actual_dict):
-    """Build 上周总结 section."""
+    """Build 上月总结 section."""
     prev_markets = prev_pred["markets"]
     period = prev_pred.get("prediction_period", "未知")
     
@@ -469,13 +408,13 @@ def build_last_week_review(prev_pred, actual_dict):
         actual_rate = 0
     if total_dir > 0 and actual_rate >= 0.85:
         summary_color = "#4caf50"
-        summary_text = "▸ 上周总结：预测表现优秀"
+        summary_text = "▸ 上月总结：预测表现优秀"
     elif total_dir > 0 and actual_rate >= 0.60:
         summary_color = "#ff9800"
-        summary_text = "▸ 上周总结：预测表现一般"
+        summary_text = "▸ 上月总结：预测表现一般"
     else:
         summary_color = "#f44336"
-        summary_text = "▸ 上周总结：预测表现不及预期"
+        summary_text = "▸ 上月总结：预测表现不及预期"
     
     # Build summary detail based on actual outcomes
     top_wrong_market = sorted(wrong, key=lambda x: abs(x[1]))[-1] if wrong else None
@@ -483,7 +422,7 @@ def build_last_week_review(prev_pred, actual_dict):
     flat_markets = [x for x in wrong if x[2] == "FLAT"]
     flat_detail = f"，{', '.join([m['market'] for m, _, _ in flat_markets])} BULL但平盘" if flat_markets else ""
     summary_detail = (
-        f"上周预测方向正确率 {actual_rate:.1%}（{len(correct)}/{total_dir}）。"
+        f"上月预测方向正确率 {actual_rate:.1%}（{len(correct)}/{total_dir}）。"
         f"Tier1 {t1_hit}/{t1_hit+len(t1_wrong)} 正确，Tier2 {t2_hit}/{t2_total_dir} 正确。"
         f"{wrong_detail}{flat_detail}。高 EPU 环境下平盘市场增多，方向判断难度加大。"
     )
@@ -527,12 +466,12 @@ def build_last_week_review(prev_pred, actual_dict):
     review_table_rows = (correct_rows + "\n" + wrong_rows + "\n" + neutral_rows) if neutral else (correct_rows + "\n" + wrong_rows)
     
     return f"""
-    <h2 class="section-title">📊 上周预测回顾 ({period})</h2>
+    <h2 class="section-title">📊 上月预测回顾 ({period})</h2>
     <div class="review-card">
         <p style="color:#888;font-size:13px;margin-bottom:16px">
-            上周 ({period}) 预测，
+            上月 ({period}) 预测，
             {', '.join(set(f'<span class="signal-{m["signal"].lower()}">{m["signal"]}</span>' for m in prev_markets))}，
-            对比本周实际走势：
+            对比本月实际走势：
         </p>
         <div class="summary-stats">
             <div class="stat">
@@ -761,7 +700,7 @@ def _cycle_warning_html(data):
 
 
 def build_current_prediction(data):
-    """Build 本周预测 section."""
+    """Build 本月预测 section."""
     epu = data["epu"]
     markets = data["markets"]
     period = data.get("prediction_period", "")
@@ -778,20 +717,10 @@ def build_current_prediction(data):
         return f'<span style="color:#{c}">{val * 100:+.2f}%</span>'
     
     def _tag(m):
-        """Generate diagnosis tags."""
+        """Generate diagnosis tags (阶段2: 仅保留核心因子解读)."""
         tags = []
         tm = m.get("tm_z", 0)
         mr = m.get("mr_z", 0)
-        vr = m.get("vr_z", 0)
-        if m.get("regime_shift", False):
-            tags.append('<span class="overheat-tag" style="background:rgba(244,67,54,0.15);color:#f44336">🔴 制度偏离→NEUT</span>')
-        elif m.get("regime_unfamiliar", False):
-            rd = m.get("regime_distance", 0)
-            tags.append(f'<span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">⚠ 陌生制度(D={rd:.1f})</span>')
-        if m.get("overheat", False) or tm > 3.5:
-            tags.append('<span class="overheat-tag">⚠过热</span>')
-        elif tm > 2.0:
-            tags.append('<span class="overheat-tag">⚠过热</span>')
         if mr < -3.0:
             tags.append('<span class="overheat-tag">超买</span>')
         elif mr > 2.5:
@@ -800,16 +729,8 @@ def build_current_prediction(data):
             tags.append('<span class="overheat-tag">偏热</span>')
         elif mr > 1.0:
             tags.append('<span class="oversold-tag">偏卖</span>')
-        # P0/P1: New override tags
         if m.get("flat_market", False):
             tags.append('<span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">平盘→NEUT</span>')
-        if m.get("vix_epu_conflict", False):
-            tags.append('<span class="overheat-tag" style="background:rgba(156,39,176,0.15);color:#ce93d8">VIX-EPU冲突</span>')
-        # P5 (2026W33): Micro-factor confidence modulation
-        if m.get("micro_effect") == "align":
-            tags.append('<span class="oversold-tag" style="background:rgba(76,175,80,0.12);color:#4caf50">微周期共振</span>')
-        elif m.get("micro_effect") == "conflict":
-            tags.append('<span class="overheat-tag" style="background:rgba(255,152,0,0.15);color:#ff9800">微周期背离</span>')
         return ' '.join(tags)
     
     def market_row(m):
@@ -840,27 +761,13 @@ def build_current_prediction(data):
         else:
             r5_html = '<span style="color:#555">N/A</span>'
 
-        # P4: Sentiment factor column
-        sent = m.get("sentiment_factor", "N/A")
-        if sent == "BULLISH":
-            sent_html = '<span style="color:#4caf50;font-size:10px">↗ 看好</span>'
-        elif sent == "BEARISH":
-            sent_html = '<span style="color:#f44336;font-size:10px">↘ 看空</span>'
-        elif sent == "NEUTRAL":
-            sent_html = '<span style="color:#888;font-size:10px">─ 中性</span>'
-        else:
-            sent_html = '<span style="color:#555;font-size:10px">N/A</span>'
-
-        # Signal rendering with regime_shift and low_confidence markers
+        # Signal rendering with low_confidence markers
         sig = m["signal"]
         low_conf = m.get("low_confidence", False)
-        regime_shift = m.get("regime_shift", False)
         detail = m.get("detail", "")
         # Final honest-NEUT check: detail contains "无法预测" → strongest low-confidence
         cannot_predict = low_conf and "无法预测" in detail
-        if regime_shift:
-            sig_html = '<span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span>'
-        elif sig == "NEUT" and low_conf:
+        if sig == "NEUT" and low_conf:
             if cannot_predict:
                 sig_html = '<span style="color:#ff9800;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#ff9800">低信念·无法预测</span></span>'
             else:
@@ -875,18 +782,6 @@ def build_current_prediction(data):
 
         cn_note = '<span class="cn-note">⚠ 仅供参考</span>' if code == 'CN' else ''
 
-        # Regime distance cell (P3)
-        rd = m.get("regime_distance")
-        if rd is not None:
-            if m.get("regime_shift", False):
-                rd_html = f'<span style="color:#f44336;font-weight:700">{rd:.1f} 🔴</span>'
-            elif m.get("regime_unfamiliar", False):
-                rd_html = f'<span style="color:#ff9800;font-weight:700">{rd:.1f} ⚠</span>'
-            else:
-                rd_html = f'<span style="color:#666">{rd:.1f}</span>'
-        else:
-            rd_html = '<span style="color:#555">-</span>'
-
         return (
             f'<tr class="{row_class}">'
             f'<td style="font-size:13px">{tier_badge(m["tier"])}{m["name_cn"]}{cn_note}</td>'
@@ -898,13 +793,8 @@ def build_current_prediction(data):
             f'<td style="text-align:right;font-size:12px;color:#888">{m["tm_z"]:+.2f}σ</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m["mr_z"]:+.2f}σ</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m.get("vr_z",0):+.2f}σ</td>'
-            f'<td style="text-align:right;font-size:12px;color:#888">{m.get("mm_z",0):+.2f}σ</td>'
-            f'<td style="text-align:right;font-size:12px;color:#888">{m.get("iv_z",0):+.2f}σ</td>'
-            f'<td style="text-align:right;font-size:12px;color:#888">{m.get("gs_z",0):+.2f}σ</td>'
-            f'<td style="text-align:right;font-size:12px">{rd_html}</td>'
             f'<td style="text-align:right">{ytd_html}</td>'
             f'<td style="text-align:right">{weekly_html}</td>'
-            f'<td style="text-align:center">{sent_html}</td>'
             f'<td style="font-size:11px;color:#666">{diagnosis}</td>'
             f'</tr>'
         )
@@ -970,7 +860,7 @@ def build_current_prediction(data):
         return len([m for m in mkts if m["signal"] == sig])
     
     return f"""
-    <h2 class="section-title">🔮 本周预测 ({period})</h2>
+    <h2 class="section-title">🔮 本月预测 ({period})</h2>
 
     <div class="metric-grid">
         <div class="metric">
@@ -995,15 +885,15 @@ def build_current_prediction(data):
             <div style="font-size:10px;color:#888;margin-top:4px">55-70% · 仅供参考</div>
         </div>
         {_rolling_accuracy_html(rolling)}
-        <div class="metric" style="border:1px solid rgba(244,67,54,0.3)">
-            <div class="lbl">制度偏离市场数</div>
-            <div class="val" style="font-size:18px;color:#f44336">{data.get('regime_shifted_count', 0)}🔴 {data.get('regime_warned_count', 0)}⚠</div>
-            <div style="font-size:10px;color:#888;margin-top:4px">强制NEUT · 陌生制度</div>
+        <div class="metric" style="border:1px solid rgba(255,152,0,0.3)">
+            <div class="lbl">低信念市场数</div>
+            <div class="val" style="font-size:18px;color:#ff9800">{sum(1 for m in markets if m.get('low_confidence'))}</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">低信念 → 强制NEUT</div>
         </div>
         <div class="metric">
             <div class="lbl">数据快照</div>
             <div class="val" style="font-size:14px;color:#4facfe;font-family:monospace">{gen_time}</div>
-            <div style="font-size:10px;color:#888;margin-top:4px">3+3 Factor Kalman DFM + 微周期</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">3因子模型(趋势/回归/波动) + EPU制度切换</div>
         </div>
     </div>
     {_cycle_warning_html(data)}
@@ -1011,12 +901,12 @@ def build_current_prediction(data):
     {hk_html}
 
     <h3 style="font-size:15px;color:#4caf50;margin-bottom:16px;">★★★ Tier 1 — 高置信度 (≥70% 准确率)</h3>
-    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">置信度=回测 | 5年=近5年滚动 | 滚动=近4周实际 | 情绪=独立因子 | 微动量/周内波动/跳空=微周期因子(2026W33) | 制度σ=马氏距离 | YTD=年初至今 | 周变=上周变化</p>
+    <p style="font-size:12px;color:#666;margin-top:-8px;margin-bottom:8px">置信度=回测 | 5年=近5年滚动 | 滚动=近4期实际 | YTD=年初至今 | 月变=上月变化</p>
 	    <div style="overflow-x:auto">
 	    <table class="predict-table" style="min-width:1550px">
 	        <thead><tr>
-	            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
-	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">微动量σ</th><th style="text-align:right">周内波动σ</th><th style="text-align:right">跳空σ</th><th style="text-align:right">制度σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th style="text-align:center">情绪</th><th>诊断</th>
+	            <th>市场</th><th>信号</th><th style="text-align:right">预期收益(年化)</th>
+	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">YTD</th><th style="text-align:right">月变</th><th>诊断</th>
         </tr></thead>
         <tbody>
     {tier1_rows}
@@ -1028,8 +918,8 @@ def build_current_prediction(data):
     <div style="overflow-x:auto">
 	    <table class="predict-table" style="min-width:1550px">
 	        <thead><tr>
-	            <th>市场</th><th>信号</th><th style="text-align:right">12月预期收益</th>
-	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">微动量σ</th><th style="text-align:right">周内波动σ</th><th style="text-align:right">跳空σ</th><th style="text-align:right">制度σ</th><th style="text-align:right">YTD</th><th style="text-align:right">周变</th><th style="text-align:center">情绪</th><th>诊断</th>
+	            <th>市场</th><th>信号</th><th style="text-align:right">预期收益(年化)</th>
+	            <th style="text-align:right">回测</th><th style="text-align:right">5年</th><th style="text-align:right">滚动</th><th style="text-align:right">趋势σ</th><th style="text-align:right">反转σ</th><th style="text-align:right">波动σ</th><th style="text-align:right">YTD</th><th style="text-align:right">月变</th><th>诊断</th>
         </tr></thead>
         <tbody>
     {tier2_rows}
@@ -1044,7 +934,7 @@ def build_current_prediction(data):
     {ytd_bars_html}
     </div>
 
-    <h3 style="font-size:15px;color:#f7971e;margin-top:40px;margin-bottom:16px;">⚡ 本周关键判断</h3>
+    <h3 style="font-size:15px;color:#f7971e;margin-top:40px;margin-bottom:16px;">⚡ 本月关键判断</h3>
     <div class="card">
         <div class="grid-2">
             <div>
@@ -1085,9 +975,9 @@ def build_current_prediction(data):
 
 
 def build_outlook(epu, period_str):
-    """Build 下周展望 section."""
+    """Build 未来一月展望 section."""
     return f"""
-    <h2 class="section-title">🔭 下周展望 (第28周 7/6-7/12)</h2>
+    <h2 class="section-title">🔭 未来一月展望 ({period_str})</h2>
     <div class="outlook-card">
         <h3>📡 基于 EPU 极端高位的 W28 市场前瞻</h3>
         <p style="font-size:13px;color:#aaa;line-height:1.7;margin-bottom:16px">
@@ -1138,7 +1028,7 @@ def build_outlook(epu, period_str):
             <p><strong>⚠ 风险提示：</strong>
             高 EPU（P{epu['percentile']}）环境下，模型的趋势延续模式虽然历史表现稳健，但极端政治经济环境可能引发非线性市场反应。
             不建议在此阶段过度集中于单一市场或方向，尤其是已出现极端超买信号的韩国（趋势 +3.77σ）和日本（趋势 +2.53σ）市场。
-            下周重点关注 EPU 是否出现拐点信号，若 EPU 回落至 250 以下，部分市场的均值回归压力将显著释放。
+            下月重点关注 EPU 是否出现拐点信号，若 EPU 回落至 250 以下，部分市场的均值回归压力将显著释放。
             韩国 KOSPI W27 周跌 -7.80%，已开始超买回调，需持续关注。
             </p>
         </div>
@@ -1256,13 +1146,21 @@ def main():
     
     wk_t1, wk_t2 = get_rates(last_week_pred, LAST_WEEK_ACTUAL)
     mo_t1, mo_t2 = get_rates(monthly_pred, JUNE_ACTUAL)
-    
+
+    # HK note (opted-in CN EPU market) — omit gracefully if absent in data.
+    _hk_acc = next((m["accuracy"] for m in cur_pred["markets"] if m["market"] == "HK"), None)
+    hk_note = (
+        f"恒生指数和中国A股使用中国 EPU（CHNMAINLANDEPU）作为制度开关，HSI 准确率从 66.7% 提升至 {_hk_acc:.1%}。"
+        if _hk_acc is not None else
+        "中国A股使用中国 EPU（CHNMAINLANDEPU）作为制度开关。"
+    )
+
     body = f"""<div class="container">
     <a href="/" class="back-link">← 首页</a>
     <div class="page-header">
         <div class="icon">🔮</div>
         <h1 style="background:linear-gradient(135deg,#f7971e,#ffd200);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">全球市场预测</h1>
-        <p class="sub">13 市场 · 3+3 因子模型(趋势/回归/波动 + 微动量/周内波动/跳空) · EPU 制度切换 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
+        <p class="sub">13 市场 · 3 因子模型(趋势/回归/波动) + EPU制度切换 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
     </div>
 
     {epu_alert_html}
@@ -1272,8 +1170,8 @@ def main():
     {outlook_section}
 
     <div class="insight-box" style="margin-top:32px">
-        <p>💡 <strong>模型说明：</strong>3-factor Kalman DFM（趋势+均值回归+波动率）提取方向和幅度两个潜因子，EPU > P75 时自动切换为趋势延续模式。2026W33 起新增微周期因子（5日动量/周内波动/周末跳空）作为置信度调节器：与主模型方向一致时置信度×1.06，背离时×0.90，用于捕捉3-7天级别的短期转向。
-        恒生指数和中国A股使用中国 EPU（CHNMAINLANDEPU）作为制度开关，HSI 准确率从 66.7% 提升至 {cur_pred['markets'][[m['market'] for m in cur_pred['markets']].index('HK')]['accuracy']:.1%}。
+        <p>💡 <strong>模型说明：</strong>3-factor Kalman DFM（趋势+均值回归+波动率）提取方向和幅度两个潜因子，EPU > P75 时自动切换为趋势延续模式，并设平盘/低信念保护门控。
+        {hk_note}
         Tier 1 市场（≥70% 回测准确率，≥5年历史数据）可用于配置参考；Tier 2 市场（55-70%，≤1年追踪）仅供观察。
         预测收益率为年化估算，不代表短期走势。模型基于过去 5 年滚动窗口回测验证。
         数据来源：yfinance / FRED / akshare · 模型：Global Economy Lab · 
@@ -1283,9 +1181,9 @@ def main():
     <div style="text-align:center;margin-top:24px;font-size:11px;color:#444">
         <span class="ts-stamp">第{week_num}周存档</span>
         <span style="margin:0 8px">|</span>
-        <span>上周准确率 Tier1: {wk_t1} | Tier2: {wk_t2}</span>
+        <span>上月回顾准确率 Tier1: {wk_t1} | Tier2: {wk_t2}</span>
         <span style="margin:0 8px">|</span>
-        <span>月度准确率 Tier1: {mo_t1} | Tier2: {mo_t2}</span>
+        <span>月度总结准确率 Tier1: {mo_t1} | Tier2: {mo_t2}</span>
         <span style="margin:0 8px">|</span>
         <span>EPU: {epu['value']} (P{epu['percentile']} · {epu.get('regime', 'HIGH_EPU')} 制度)</span>
     </div>
