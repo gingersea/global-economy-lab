@@ -227,6 +227,10 @@ class HighConfidencePredictor:
         self._market_epu_label: Dict[str, str] = {}       # market → 'us' | 'china'
         self._market_ar_coeffs: Dict[str, float] = {}     # market → AR(1) decay
         self._market_signal_threshold: Dict[str, float] = {}  # market → signal cutoff
+        # Per-market minimum publish accuracy (阶段2 P2).  Defaults to
+        # self.min_confidence; used to keep otherwise-sufficiently-accurate
+        # markets (e.g. HK/GB ~0.50-0.54) in the published set.
+        self._market_min_confidence: Dict[str, float] = {}
         # VIX support
         self._vix_history: Optional[np.ndarray] = None
         self._vix_p80: Optional[float] = None
@@ -236,12 +240,6 @@ class HighConfidencePredictor:
         self._vix_trend_20d: Optional[float] = None  # 20-day change (fraction)
         self._vix_active: bool = False
         self._vix_median: float = 20.0
-        # Sentiment / flow factor (P2: 2026W30)
-        self._pcr_history: Optional[pd.Series] = None   # put/call ratio daily series
-        self._spread_history: Optional[pd.Series] = None  # 10Y-2Y spread daily series
-        self._pcr_p80: Optional[float] = None
-        self._pcr_p20: Optional[float] = None
-        self._sentiment_active: bool = False
         # Regime detection (P3: 2026W30)
         self._factor_means: Dict[str, np.ndarray] = {}   # market → (3,) mean vector
         self._factor_cov: Dict[str, np.ndarray] = {}      # market → (3,3) covariance
@@ -292,98 +290,6 @@ class HighConfidencePredictor:
             f"P20={self._vix_p20:.1f} 5d={self._vix_trend_5d:+.1%} 20d={self._vix_trend_20d:+.1%}"
         )
 
-    def fit_sentiment(self, pcr_df: pd.DataFrame = None, spread_df: pd.DataFrame = None):
-        """Fit sentiment/flow data as optional 4th factor.
-
-        Args:
-            pcr_df:    DataFrame with 'put_call_ratio' column, date-indexed.
-            spread_df: DataFrame with 'spread_10y2y' column, date-indexed.
-        """
-        active = False
-
-        if pcr_df is not None and not pcr_df.empty:
-            try:
-                pcr_vals = pcr_df["put_call_ratio"].dropna()
-                if len(pcr_vals) >= 252:
-                    self._pcr_history = pcr_vals
-                    self._pcr_p80 = float(np.percentile(pcr_vals, 80))
-                    self._pcr_p20 = float(np.percentile(pcr_vals, 20))
-                    active = True
-                    current_pcr = float(pcr_vals.iloc[-1])
-                    logger.info(
-                        f"Sentiment PCR fitted: now={current_pcr:.3f} "
-                        f"P80={self._pcr_p80:.3f} P20={self._pcr_p20:.3f}"
-                    )
-            except Exception as exc:
-                logger.warning(f"Sentiment PCR fit failed: {exc}")
-
-        if spread_df is not None and not spread_df.empty:
-            try:
-                spread_vals = spread_df["spread_10y2y"].dropna()
-                if len(spread_vals) >= 252:
-                    self._spread_history = spread_vals
-                    active = True
-                    current_spread = float(spread_vals.iloc[-1])
-                    logger.info(
-                        f"Sentiment spread fitted: now={current_spread:+.3%}"
-                    )
-            except Exception as exc:
-                logger.warning(f"Sentiment spread fit failed: {exc}")
-
-        self._sentiment_active = active
-        if active:
-            logger.info("Sentiment/flow factor ACTIVE")
-        else:
-            logger.info("Sentiment/flow factor NOT active (insufficient data)")
-
-    def _compute_sentiment_factor(self) -> Tuple[float, str]:
-        """Compute sentiment/flow z-score from PCR and yield spread.
-
-        Returns (z_score, direction_label).
-          direction_label: 'BULLISH', 'BEARISH', or 'NEUTRAL'
-          z_score > 0 → bullish tailwind, z_score < 0 → bearish headwind
-
-        If sentiment data is inactive or unavailable, returns (0.0, 'N/A').
-        """
-        if not self._sentiment_active:
-            return 0.0, "N/A"
-
-        signals = []
-
-        # Put/call ratio signal
-        if self._pcr_history is not None and self._pcr_p80 is not None:
-            current_pcr = float(self._pcr_history.iloc[-1])
-            if current_pcr > self._pcr_p80:
-                signals.append(-1.0)  # High PCR = fear = bearish
-            elif current_pcr < self._pcr_p20:
-                signals.append(1.0)   # Low PCR = greed = bullish
-            else:
-                signals.append(0.0)
-
-        # Yield spread signal
-        if self._spread_history is not None:
-            current_spread = float(self._spread_history.iloc[-1])
-            if current_spread < 0:
-                signals.append(-1.0)  # Inverted = recession signal = bearish
-            elif current_spread > 0.015:  # > 1.5% = steep = growth signal
-                signals.append(1.0)       # Normal steep curve = bullish
-            else:
-                signals.append(0.0)
-
-        if not signals:
-            return 0.0, "N/A"
-
-        z_score = float(np.mean(signals))  # -1 to +1 scale
-
-        if z_score > 0.2:
-            direction = "BULLISH"
-        elif z_score < -0.2:
-            direction = "BEARISH"
-        else:
-            direction = "NEUTRAL"
-
-        return z_score, direction
-
     # ── Market config ───────────────────────────────────────────
     def set_market_params(
         self,
@@ -391,6 +297,7 @@ class HighConfidencePredictor:
         ar_coeff: float = None,
         signal_threshold: float = None,
         epu_label: str = None,
+        min_confidence: float = None,
     ):
         """Set per-market model parameters.
 
@@ -401,6 +308,8 @@ class HighConfidencePredictor:
             signal_threshold: Return cutoff for BULL/BEAR signal (default 0.03).
                               Higher = more conservative signals.
             epu_label:        Which EPU to use for regime switching ('us', 'china').
+            min_confidence:   Minimum directional accuracy to publish this
+                              market (overrides the global min_confidence).
         """
         if ar_coeff is not None:
             self._market_ar_coeffs[market] = ar_coeff
@@ -408,6 +317,25 @@ class HighConfidencePredictor:
             self._market_signal_threshold[market] = signal_threshold
         if epu_label is not None:
             self._market_epu_label[market] = epu_label
+        if min_confidence is not None:
+            self._market_min_confidence[market] = min_confidence
+
+    def _min_confidence_for(self, market: str) -> float:
+        """Publish threshold for a market (per-market override, else global)."""
+        return self._market_min_confidence.get(market, self.min_confidence)
+
+    def _tier_for(self, market: str, confidence: float) -> int:
+        """Map accuracy to a publish tier.
+
+        Tier 1 requires strict >=70%.  Tier 2's lower bound is the per-market
+        publish threshold (0.55 default; 0.50 for markets like HK/GB that are
+        explicitly kept in the set even though they sit just above random).
+        """
+        if confidence >= 0.70:
+            return 1
+        if confidence >= self._min_confidence_for(market):
+            return 2
+        return 3
 
     # ── Regime detection ────────────────────────────────────────
     def _epu_threshold_for_market(self, market: str) -> float:
@@ -570,10 +498,11 @@ class HighConfidencePredictor:
                 f"regime-switched ({regime_acc:.0%}) — using single"
             )
 
-        if overall_acc < self.min_confidence:
+        threshold = self._min_confidence_for(market)
+        if overall_acc < threshold:
             logger.info(
                 f"  {market}: accuracy {overall_acc:.0%} < "
-                f"{self.min_confidence:.0%} threshold — skipping"
+                f"{threshold:.0%} threshold — skipping"
             )
             return None
 
@@ -599,17 +528,20 @@ class HighConfidencePredictor:
     def _check_flat_market(self, prices: pd.Series) -> Tuple[bool, str]:
         """Check if the market has been effectively flat recently.
 
-        When |10-day return| < FLAT_MARKET_THRESHOLD, the market shows
-        negligible directional movement.  BULL/BEAR signals in such
-        conditions are noise rather than actionable predictions.
+        Uses a ~1-month (21 trading day) close-to-close window, aligned with
+        the 阶段2 月度 flat-check semantics in ``predict()``.  When
+        |monthly return| < FLAT_MARKET_THRESHOLD the market shows negligible
+        directional movement — BULL/BEAR signals under these conditions are
+        noise rather than actionable predictions.
 
         Returns (is_flat, reason).
         """
-        if prices is None or len(prices) < 11:
+        window = TRADING_DAYS_PER_MONTH  # ~21 trading days ≈ 1 month
+        if prices is None or len(prices) < window + 1:
             return False, ""
-        recent_ret = float(prices.iloc[-1] / prices.iloc[-11] - 1)
+        recent_ret = float(prices.iloc[-1] / prices.iloc[-(window + 1)] - 1)
         if abs(recent_ret) < FLAT_MARKET_THRESHOLD:
-            return True, f"平盘 (|10d ret|={recent_ret:.2%} < {FLAT_MARKET_THRESHOLD:.1%}) → NEUT"
+            return True, f"平盘 (|月度ret|={recent_ret:.2%} < {FLAT_MARKET_THRESHOLD:.1%}) → NEUT"
         return False, ""
 
     def _check_low_conviction(
@@ -720,7 +652,7 @@ class HighConfidencePredictor:
         # Market-specific signal threshold
         sig_thresh = self._market_signal_threshold.get(market, 0.03)
         signal = 1 if pred > sig_thresh else (-1 if pred < -sig_thresh else 0)
-        tier = 1 if cfg["accuracy"] >= 0.70 else (2 if cfg["accuracy"] >= 0.55 else 3)
+        tier = self._tier_for(market, cfg["accuracy"])
 
         factors = {
             "tm": round(tm_now, 4), "tm_z": round(tm_z, 2),
@@ -804,13 +736,9 @@ class HighConfidencePredictor:
                 direction = "↓" if self._vix_trend_5d < 0 else "↑"
                 detail_parts.append(f"VIX={self._vix_now:.1f}{direction}")
 
-        # Tier from accuracy (no confidence discounting remains — clean model)
-        if confidence >= 0.70:
-            tier = 1
-        elif confidence >= 0.55:
-            tier = 2
-        else:
-            tier = 3
+        # Tier from accuracy (no confidence discounting remains — clean model).
+        # Uses the per-market publish threshold so HK/GB (@0.50) show as Tier 2.
+        tier = self._tier_for(market, confidence)
 
         return MarketPrediction(
             market=market,

@@ -70,10 +70,13 @@ MARKET_TICKERS = {
 # IN: only 19y data, 0 normal EPU years → single-model fallback.
 # BR: high volatility, uses faster AR(1) decay.
 MARKET_PARAMS = {
-    "HK": {"ar_coeff": 0.75, "signal_threshold": 0.05, "epu_label": "china"},
+    "HK": {"ar_coeff": 0.75, "signal_threshold": 0.05, "epu_label": "china", "min_confidence": 0.50},
     "CN": {"ar_coeff": 0.55, "signal_threshold": 0.06, "epu_label": "us"},
     "BR": {"ar_coeff": 0.65, "signal_threshold": 0.05, "epu_label": "us"},
     "IN": {"ar_coeff": 0.65, "signal_threshold": 0.03, "epu_label": "us"},
+    # GB (英国 FTSE): 月度回测 ~51%, below the global 0.55 bar but above
+    # random — publish as low-confidence reference.
+    "GB": {"min_confidence": 0.50},
 }
 
 TIER_LABELS = {1: "★★★ 可操作", 2: "★★ 参考(1年)", 3: "☆ 不可用"}
@@ -477,7 +480,6 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
                actual_accuracy=None, vix_info=None, epu_percentile=50.0, predictor=None,
                cycle_info=None):
     """Convert predictions to structured JSON with all metadata."""
-    year, week_num, mon, sun = week_info
     epu_val = epu_values["us"]
     china_epu_val = epu_values.get("china", epu_val)
 
@@ -527,7 +529,7 @@ def build_json(predictions, epu_values, is_high_epu, gen_time, week_info,
     result = {
         "generated": gen_time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
         "generated_display": gen_time.strftime("%Y-%m-%d %H:%M CST"),
-        "prediction_period": f"{year}年第{week_num}周 ({mon.strftime('%-m/%-d')}-{sun.strftime('%-m/%-d')})",
+        "prediction_period": f"{gen_time.year}年{gen_time.month}月",
         "epu": {
             "value": round(epu_val, 1),
             "regime": "HIGH_EPU" if is_high_epu else "NORMAL",
@@ -667,7 +669,7 @@ def build_prediction_html(data, week_info):
     """Generate full prediction page HTML."""
     year, week_num, mon, sun = week_info
     gen_time = data["generated_display"]
-    period = data.get("prediction_period", f"{year}年第{week_num}周")
+    period = data.get("prediction_period", f"{year}年{mon.month}月")
     epu = data["epu"]
     markets = data["markets"]
     vix_data = data.get("vix", {})
@@ -794,7 +796,7 @@ def build_prediction_html(data, week_info):
     <div class="page-header">
         <div class="icon">🔮</div>
         <h1 style="background:linear-gradient(135deg,#f7971e,#ffd200);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">全球市场预测</h1>
-        <p class="sub">13 市场 · 3-Factor 模型 · 分市场制度切换 + VIX 辅助 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
+        <p class="sub">{len(markets)} 市场 · 3-Factor 模型 · 分市场制度切换 + VIX 辅助 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
     </div>
 
     <div class="metric-grid">
@@ -855,7 +857,7 @@ def build_market_section_html(data, week_info):
     """Generate market.html insertion snippet."""
     year, week_num, mon, sun = week_info
     gen_time = data["generated_display"]
-    period = data.get("prediction_period", f"{year}年第{week_num}周")
+    period = data.get("prediction_period", f"{year}年{mon.month}月")
     markets = data["markets"]
     epu = data["epu"]
     vix_data = data.get("vix", {})
@@ -991,7 +993,9 @@ def main():
     gen_time = datetime.now()
     week_info = iso_week_for_prediction(gen_time.date())
     year, week_num, mon, sun = week_info
-    period_label = f"{year}年第{week_num}周 ({mon.strftime('%-m/%-d')}-{sun.strftime('%-m/%-d')})"
+    # 阶段2 (月频): the prediction_period is monthly-semantic even though the
+    # data-only pipeline still runs on a weekly cadence.
+    period_label = f"{gen_time.year}年{gen_time.month}月"
 
     logger.info("=" * 64)
     logger.info(f"Global Economy Lab — Auto Predict [{args.mode}]")

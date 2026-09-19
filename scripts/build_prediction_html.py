@@ -781,10 +781,12 @@ def build_current_prediction(data):
         row_class = ' cn-row' if code == 'CN' else ''
 
         cn_note = '<span class="cn-note">⚠ 仅供参考</span>' if code == 'CN' else ''
+        # 阶段2 (P2): HK/GB published at a 0.50 bar — barely better than random.
+        low_conf_note = '<span class="cn-note">接近随机，仅参考</span>' if code in ("HK", "GB") else ''
 
         return (
             f'<tr class="{row_class}">'
-            f'<td style="font-size:13px">{tier_badge(m["tier"])}{m["name_cn"]}{cn_note}</td>'
+            f'<td style="font-size:13px">{tier_badge(m["tier"])}{m["name_cn"]}{cn_note}{low_conf_note}</td>'
             f'<td>{sig_html}</td>'
             f'<td style="text-align:right">{_ret_color(m["pred_ret"])}</td>'
             f'<td style="text-align:right;font-size:12px;color:#888">{m["accuracy"]:.1%}</td>'
@@ -1054,8 +1056,12 @@ def main():
     # Get today/current date for archive naming
     today = date.today()
     gen_time = cur_pred["generated_display"]
-    period = cur_pred.get("prediction_period", f"{year}年第{week_num}周")
+    # 阶段2 (月频): prediction_period is monthly ("2026年9月"); fall back to
+    # the current run month if the field is unexpectedly absent.
+    period = cur_pred.get("prediction_period", f"{today.year}年{today.month}月")
     epu = cur_pred["epu"]
+    # 阶段2 (P3): dynamic published-market count (HK/GB now included at 0.50 bar).
+    n_markets = len(cur_pred.get("markets", []))
 
     # EPU P95+ extreme-regime warning
     epu_percentile = epu.get("percentile", 0)
@@ -1160,7 +1166,7 @@ def main():
     <div class="page-header">
         <div class="icon">🔮</div>
         <h1 style="background:linear-gradient(135deg,#f7971e,#ffd200);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">全球市场预测</h1>
-        <p class="sub">13 市场 · 3 因子模型(趋势/回归/波动) + EPU制度切换 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
+        <p class="sub">{n_markets} 市场 · 3 因子模型(趋势/回归/波动) + EPU制度切换 ｜ 预测周期 {period} ｜ <span class="ts-stamp">生成 {gen_time}</span></p>
     </div>
 
     {epu_alert_html}
@@ -1179,7 +1185,7 @@ def main():
     </div>
 
     <div style="text-align:center;margin-top:24px;font-size:11px;color:#444">
-        <span class="ts-stamp">第{week_num}周存档</span>
+        <span class="ts-stamp">{period} 存档</span>
         <span style="margin:0 8px">|</span>
         <span>上月回顾准确率 Tier1: {wk_t1} | Tier2: {wk_t2}</span>
         <span style="margin:0 8px">|</span>
@@ -1189,7 +1195,7 @@ def main():
     </div>
 </div>"""
     
-    html = build_page(f"全球市场预测 (第{week_num}周)", body)
+    html = build_page(f"全球市场预测 ({period})", body)
     
     # Write outputs
     html_path = OUTPUT_DIR / "prediction.html"
