@@ -191,25 +191,41 @@ def load_china_epu():
 
 
 def load_vix():
-    """Load VIX data from yfinance as daily EPU proxy.
+    """Load VIX data — primary from FRED VIXCLS, fallback to yfinance.
 
-    Returns (vix_series, vix_current) where vix_series is full history.
+    Returns VIX daily series (pd.Series of closing values), or None on failure.
+    VIXCLS is the official CBOE VIX daily series published by FRED.
     """
+    # ── Primary: FRED VIXCLS ──────────────────────────────────────────────
+    try:
+        f = MacroEconomicFetcher(series_id="VIXCLS")
+        df = f.fetch(start_date="1990-01-01", end_date=date.today().strftime("%Y-%m-%d"))
+        if df is not None and not df.empty:
+            vix_series = df["value"] if "value" in df.columns else df.select_dtypes(include="number").iloc[:, 0]
+            vix_series = pd.Series(vix_series.values, index=pd.to_datetime(df.index), dtype=float).dropna()
+            if len(vix_series) >= 252:
+                logger.info(f"VIX loaded from FRED VIXCLS: {len(vix_series)} daily obs, latest={vix_series.iloc[-1]:.1f}")
+                return vix_series
+            else:
+                logger.warning(f"VIXCLS insufficient history ({len(vix_series)} < 252)")
+    except Exception as e:
+        logger.warning(f"VIXCLS load failed: {e}")
+
+    # ── Fallback: yfinance ─────────────────────────────────────────────────
     try:
         vix = yf.Ticker("^VIX")
         df = vix.history(period="max")
         if df is None or df.empty:
-            logger.warning("VIX: no data returned")
+            logger.warning("VIX (yfinance fallback): no data returned")
             return None
-        close = df["Close"]
-        close = close.dropna()
+        close = df["Close"].dropna()
         if len(close) < 252:
-            logger.warning(f"VIX: insufficient history ({len(close)} < 252)")
+            logger.warning(f"VIX (yfinance fallback): insufficient history ({len(close)} < 252)")
             return None
-        logger.info(f"VIX loaded: {len(close)} daily obs, latest={close.iloc[-1]:.1f}")
+        logger.info(f"VIX loaded from yfinance: {len(close)} daily obs, latest={close.iloc[-1]:.1f}")
         return close
     except Exception as e:
-        logger.warning(f"VIX load failed: {e}")
+        logger.warning(f"VIX (yfinance fallback) load failed: {e}")
         return None
 
 

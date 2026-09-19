@@ -1153,6 +1153,27 @@ class HighConfidencePredictor:
                 f"BULL confidence ×{VIX_RISK_OFF_BULL_DISCOUNT:.2f} → {confidence:.0%}"
             )
 
+        # ── Final honest-NEUT check (2026W34: P0) ─────────────────
+        # After all gates (overheat, flat, sentiment, micro-evidence lift,
+        # VIX risk-off), re-check low conviction.  The earlier _check_low_conviction
+        # at line ~1077 only fires when signal != 0 at that point, but the
+        # micro-evidence gate (lines 1117-1139) can lift a NEUT to BULL/BEAR.
+        # This final check ensures: if abs(pred) < LOW_CONVICTION_RET_THRESHOLD
+        # AND all 3-factor |z| < LOW_CONVICTION_Z_THRESHOLD, the final signal
+        # is unconditionally NEUT — never a default BULL from a tiny intercept.
+        final_low_confidence = False
+        if signal != 0:
+            final_max_z = max(abs(tm_z), abs(mr_z), abs(vr_z))
+            if abs(pred) < LOW_CONVICTION_RET_THRESHOLD and final_max_z < LOW_CONVICTION_Z_THRESHOLD:
+                original_signal_label = "BULL" if signal > 0 else "BEAR"
+                signal = 0
+                final_low_confidence = True
+                logger.info(
+                    f"  {market}: final low-conviction override ({original_signal_label} → NEUT) "
+                    f"— |ret|={pred:.3%} all |z|<{LOW_CONVICTION_Z_THRESHOLD} "
+                    f"(tm_z={tm_z:+.2f} mr_z={mr_z:+.2f} vr_z={vr_z:+.2f})"
+                )
+
         # ── Build detail string ──────────────────────────────
         detail_parts = []
         if overheated:
@@ -1169,6 +1190,8 @@ class HighConfidencePredictor:
             detail_parts.append(f"情绪{'-'.join(sentiment_direction.split('/'))}→NEUT")
         if low_confidence:
             detail_parts.append("低信念→NEUT")
+        if final_low_confidence:
+            detail_parts.append("低信念→无法预测")
         if cycle_tilt_applied:
             detail_parts.append(f"周期{cycle_phase}→NEUT")
 
@@ -1244,7 +1267,7 @@ class HighConfidencePredictor:
             overheat=overheated,
             flat_market=flat_market,
             vix_epu_conflict=conflict_override,
-            low_confidence=low_confidence,
+            low_confidence=low_confidence or final_low_confidence,
             regime_distance=round(regime_dist, 2) if regime_dist is not None else None,
             regime_shift=regime_shift,
             regime_unfamiliar=regime_unfamiliar,

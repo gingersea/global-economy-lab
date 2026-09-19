@@ -855,14 +855,19 @@ def build_current_prediction(data):
         sig = m["signal"]
         low_conf = m.get("low_confidence", False)
         regime_shift = m.get("regime_shift", False)
+        detail = m.get("detail", "")
+        # Final honest-NEUT check: detail contains "无法预测" → strongest low-confidence
+        cannot_predict = low_conf and "无法预测" in detail
         if regime_shift:
             sig_html = '<span style="color:#f44336;font-weight:700">─ NEUT <span style="font-size:9px;color:#f44336">⚠制度偏离</span></span>'
         elif sig == "NEUT" and low_conf:
-            sig_html = '<span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span>'
+            if cannot_predict:
+                sig_html = '<span style="color:#ff9800;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#ff9800">低信念·无法预测</span></span>'
+            else:
+                sig_html = '<span style="color:#888;font-weight:400;font-style:italic">─ NEUT <span style="font-size:9px;color:#666">低信念</span></span>'
         else:
             sig_html = signal_html(sig)
 
-        detail = m.get("detail", "")
         tags = _tag(m)
         diagnosis = f'{tags} {detail}'.strip()
 
