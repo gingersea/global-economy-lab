@@ -1044,14 +1044,13 @@ def main():
     # Extract week number from prediction_period (format: "2026年第28周 (7/6-7/12)")
     import re
     period = cur_pred.get("prediction_period", "")
-    week_match = re.search(r'第(\d+)周', period)
-    if week_match:
-        week_num = int(week_match.group(1))
+    month_match = re.search(r'(\d+)年(\d+)月', period)
+    if month_match:
+        year = int(month_match.group(1))
+        month = int(month_match.group(2))
     else:
         today = date.today()
-        iso = today.isocalendar()
-        year, week_num = iso[0], iso[1] + 1  # +1 for next week
-    year = 2026
+        year, month = today.year, today.month
     
     # Get today/current date for archive naming
     today = date.today()
@@ -1199,26 +1198,26 @@ def main():
     
     # Write outputs
     html_path = OUTPUT_DIR / "prediction.html"
-    week_path = OUTPUT_DIR / f"prediction{year}{week_num:02d}.html"
+    month_path = OUTPUT_DIR / f"prediction{year}{month:02d}.html"
     archive_dir = OUTPUT_DIR / "archive" / today.strftime("%Y-%m-%d")
     
     with open(html_path, "w") as f:
         f.write(html)
     print(f"  → {html_path} ({len(html):,} bytes)")
     
-    with open(week_path, "w") as f:
+    with open(month_path, "w") as f:
         f.write(html)
-    print(f"  → {week_path} (weekly archive)")
+    print(f"  → {month_path} (monthly archive)")
     
     # Also save to today's archive
     if archive_dir.exists():
         with open(archive_dir / "prediction.html", "w") as f:
             f.write(html)
-        with open(archive_dir / week_path.name, "w") as f:
+        with open(archive_dir / month_path.name, "w") as f:
             f.write(html)
         print(f"  → {archive_dir}/ (archive)")
     
-    print(f"\nDone. Prediction HTML generated for week {week_num}.")
+    print(f"\nDone. Prediction HTML generated for month {year}-{month:02d}.")
     return 0
 
 
